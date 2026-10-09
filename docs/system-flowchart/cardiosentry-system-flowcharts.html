@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CardioSentry System Flowcharts</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #536079;
+      --line: #334155;
+      --blue: #eaf2ff;
+      --blue-strong: #2b64c7;
+      --green: #e9f8ef;
+      --green-strong: #23804a;
+      --amber: #fff7df;
+      --amber-strong: #9a6500;
+      --purple: #f4ecff;
+      --purple-strong: #7542b3;
+      --red: #fff0f1;
+      --red-strong: #b73542;
+      --paper: #ffffff;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: #edf1f6;
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 12px;
+      line-height: 1.3;
+    }
+
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 12mm auto;
+      padding: 13mm 15mm 12mm;
+      background: var(--paper);
+      box-shadow: 0 8px 24px rgba(15, 23, 42, .12);
+      break-after: page;
+      page-break-after: always;
+      position: relative;
+    }
+
+    .page:last-child { break-after: auto; page-break-after: auto; }
+    h1, h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-weight: 400; }
+    h1 { font-size: 23px; }
+    h2 { font-size: 20px; }
+
+    .subtitle {
+      color: var(--muted);
+      margin: 3px 0 10px;
+      font-size: 11px;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px 14px;
+      margin: 8px 0 10px;
+      color: var(--muted);
+      font-size: 10.5px;
+    }
+
+    .legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .legend i { width: 25px; height: 12px; background: #fff; border: 1.5px solid var(--line); }
+    .legend .pending { border: 2px dashed var(--purple-strong); background: var(--purple); }
+    .legend .proposed { border: 2px dashed var(--red-strong); background: var(--red); }
+
+    .flow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+    }
+
+    .node {
+      width: 116mm;
+      min-height: 13mm;
+      padding: 7px 16px;
+      border: 1.7px solid var(--line);
+      border-radius: 4px;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      text-align: center;
+      position: relative;
+    }
+
+    .node strong { font-weight: 700; }
+    .node small { display: block; color: var(--muted); margin-top: 2px; font-size: 10px; }
+
+    .terminator {
+      width: 46mm;
+      min-height: 12mm;
+      border-radius: 999px;
+      background: #fff;
+    }
+
+    .input {
+      width: 108mm;
+      transform: skew(-10deg);
+      border-radius: 2px;
+      background: var(--blue);
+    }
+
+    .input > span { transform: skew(10deg); }
+    .process { background: #f8fafc; }
+    .output { background: var(--green); border-color: var(--green-strong); }
+    .warning { background: var(--amber); border-color: var(--amber-strong); }
+
+    .subprocess {
+      background: var(--blue);
+      border-color: var(--blue-strong);
+      padding-left: 25px;
+      padding-right: 25px;
+    }
+
+    .subprocess::before,
+    .subprocess::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 0;
+      border-left: 1.7px solid currentColor;
+    }
+
+    .subprocess::before { left: 12px; }
+    .subprocess::after { right: 12px; }
+    .pending-node { background: var(--purple); border: 2px dashed var(--purple-strong); }
+    .proposed-node { background: var(--red); border: 2px dashed var(--red-strong); }
+
+    .arrow {
+      height: 12px;
+      width: 2px;
+      background: var(--line);
+      position: relative;
+      flex: none;
+    }
+
+    .arrow::after {
+      content: "";
+      position: absolute;
+      left: -4px;
+      bottom: -1px;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-top: 6px solid var(--line);
+    }
+
+    .diamond-wrap {
+      height: 31mm;
+      width: 52mm;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .diamond {
+      width: 34mm;
+      height: 34mm;
+      transform: rotate(45deg) scale(.73);
+      border: 2px solid var(--line);
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .diamond span {
+      width: 42mm;
+      transform: rotate(-45deg) scale(1.37);
+      text-align: center;
+      font-size: 11px;
+      line-height: 1.15;
+    }
+
+    .branch {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10mm;
+      align-items: start;
+      margin: 2px 0;
+      position: relative;
+    }
+
+    .branch::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 25%;
+      right: 25%;
+      border-top: 1.7px solid var(--line);
+    }
+
+    .branch-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: 8px;
+      position: relative;
+    }
+
+    .branch-col::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      height: 8px;
+      border-left: 1.7px solid var(--line);
+    }
+
+    .branch-label {
+      font-size: 10px;
+      font-weight: 700;
+      background: #fff;
+      padding: 0 4px;
+      color: var(--muted);
+      z-index: 1;
+      margin-top: -5px;
+      margin-bottom: 4px;
+    }
+
+    .branch .node { width: 76mm; min-height: 14mm; }
+    .merge-note { width: 132mm; color: var(--muted); text-align: center; font-size: 10px; margin: 4px 0; }
+
+    .stage-code {
+      position: absolute;
+      top: 5px;
+      left: 6px;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 5px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: var(--blue-strong);
+      font-size: 9px;
+      font-weight: 700;
+    }
+
+    .pending-node .stage-code { background: var(--purple-strong); }
+    .proposed-node .stage-code { background: var(--red-strong); }
+    .compact .node { min-height: 11mm; padding-top: 5px; padding-bottom: 5px; }
+    .compact .arrow { height: 9px; }
+    .compact .diamond-wrap { height: 27mm; }
+
+    .architecture {
+      display: grid;
+      grid-template-columns: 1fr 10mm 1fr;
+      align-items: center;
+      gap: 0;
+      margin-top: 8px;
+    }
+
+    .arch-column { display: flex; flex-direction: column; align-items: center; }
+    .arch-column .node { width: 78mm; }
+    .arch-arrow { text-align: center; color: var(--line); font-size: 24px; }
+
+    .attention-box {
+      border: 2px dashed var(--purple-strong);
+      background: var(--purple);
+      border-radius: 7px;
+      padding: 8px;
+      width: 82mm;
+    }
+
+    .attention-box h3 { font-size: 12px; margin: 0 0 6px; text-align: center; }
+    .attention-box .node { width: 100%; background: #fff; }
+
+    .status-note {
+      margin: 7px auto 10px;
+      width: 158mm;
+      padding: 7px 10px;
+      border-left: 4px solid var(--purple-strong);
+      background: #f8f3ff;
+      color: #563480;
+      font-size: 10px;
+    }
+
+    .safety-note {
+      margin-top: 8px;
+      border-left: 4px solid var(--red-strong);
+      background: #fff5f5;
+      padding: 7px 10px;
+      color: #7d2932;
+      font-size: 10px;
+    }
+
+    .footer {
+      position: absolute;
+      left: 15mm;
+      right: 15mm;
+      bottom: 7mm;
+      display: flex;
+      justify-content: space-between;
+      color: #7a8498;
+      font-size: 9px;
+      border-top: 1px solid #d8dee8;
+      padding-top: 3px;
+    }
+
+    @page { size: A4 portrait; margin: 0; }
+
+    @media print {
+      body { background: #fff; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      .page { margin: 0; box-shadow: none; width: 210mm; height: 297mm; min-height: 297mm; }
+    }
+  </style>
+</head>
+<body>
+  <section class="page" id="main-system-flowchart">
+    <h1>Main CardioSentry System Flowchart</h1>
+    <p class="subtitle">Direct application flow, with the pending CBAM model path and implemented guidance stage clearly marked.</p>
+    <div class="legend" aria-label="Implementation status legend">
+      <span><i></i> Implemented in the application</span>
+      <span><i class="pending"></i> Trained artifact exists; app integration pending</span>
+    </div>
+
+    <div class="flow compact">
+      <div class="node terminator"><strong>START</strong></div>
+      <div class="arrow"></div>
+      <div class="node input"><span><strong>Take or Upload ECG Sheet Photo</strong></span></div>
+      <div class="arrow"></div>
+      <div class="node subprocess"><span class="stage-code">A</span><span><strong>Capture, Detect Sheet &amp; Check Image Quality</strong><small>Store original · detect paper corners · warn on poor quality</small></span></div>
+      <div class="arrow"></div>
+      <div class="node process"><strong>Review / Adjust the Four Sheet Corners</strong></div>
+      <div class="arrow"></div>
+      <div class="node subprocess"><span class="stage-code">B</span><span><strong>Rectify &amp; Preprocess ECG Image</strong><small>Homography → 768×1024 RGB → ImageNet-normalized tensor</small></span></div>
+      <div class="arrow"></div>
+      <div class="node subprocess pending-node"><span class="stage-code">C</span><span><strong>ConvNeXt-V2 Tiny + Final-Stage CBAM</strong><small>Target path from trained CBAM checkpoint; serving integration pending</small></span></div>
+      <div class="arrow"></div>
+      <div class="node subprocess"><span class="stage-code">D</span><span><strong>Multi-Label Scoring &amp; Thresholding</strong><small>12 sigmoid heads → suppress 3 → serve 9 labels</small></span></div>
+      <div class="arrow"></div>
+      <div class="diamond-wrap"><div class="diamond"><span>Any abnormal label above its threshold?</span></div></div>
+      <div class="branch">
+        <div class="branch-col">
+          <div class="branch-label">YES</div>
+          <div class="node process"><strong>Show Flagged Abnormal Label(s)</strong><small>Model score, threshold and research caveat</small></div>
+          <div class="arrow"></div>
+          <div class="node subprocess"><span class="stage-code">E</span><span><strong>Generate Grad-CAM if Requested</strong><small>One heatmap per selected positive label</small></span></div>
+        </div>
+        <div class="branch-col">
+          <div class="branch-label">NO</div>
+          <div class="node output"><strong>Show “No Abnormal Label Flagged”</strong><small>Not a diagnosis or clinical clearance</small></div>
+          <div class="arrow"></div>
+          <div class="node process"><strong>Skip Grad-CAM</strong><small>Explanation remains available only for a selected target</small></div>
+        </div>
+      </div>
+      <div class="merge-note">Both branches continue to the model-specific safety layer.</div>
+      <div class="arrow"></div>
+      <div class="node subprocess"><span class="stage-code">F</span><span><strong>Urgency &amp; Recommended Next Steps</strong><small>Emergency symptoms first · sourced condition rules · one clear action</small></span></div>
+      <div class="arrow"></div>
+      <div class="node output"><strong>Display Result &amp; Keep Prediction Record</strong><small>Prediction is stored · guidance is computed on request · context answers are not stored</small></div>
+      <div class="arrow"></div>
+      <div class="node terminator"><strong>END</strong></div>
+    </div>
+    <div class="footer"><span>CardioSentry system flowcharts</span><span>1 / 5</span></div>
+  </section>
+
+  <section class="page" id="capture-preprocessing-flowchart">
+    <h2>A–B. Capture, Detection, Rectification &amp; Preprocessing</h2>
+    <p class="subtitle">What happens to the photograph before it reaches the model.</p>
+    <div class="flow compact">
+      <div class="node terminator"><strong>PHOTO INPUT</strong></div>
+      <div class="arrow"></div>
+      <div class="node process"><strong>Validate &amp; Store Uploaded Bytes</strong><small>Size/type checks · SHA-256 · preserve original · strip GPS EXIF by default</small></div>
+      <div class="arrow"></div>
+      <div class="node process"><strong>Apply EXIF Orientation &amp; Decode RGB Image</strong></div>
+      <div class="arrow"></div>
+      <div class="node subprocess"><span class="stage-code">A1</span><span><strong>Detect ECG Paper Quadrilateral</strong><small>OpenCV: contour → Hough → threshold-bounding-box fallback ladder</small></span></div>
+      <div class="arrow"></div>
+      <div class="node process"><strong>Measure Image Quality</strong><small>Brightness · contrast · clipping · glare · sheet area · skew · resolution</small></div>
+      <div class="arrow"></div>
+      <div class="node warning"><strong>Show Quality Warnings, but Do Not Block</strong></div>
+      <div class="arrow"></div>
+      <div class="node input"><span><strong>User Reviews / Drags Four Corner Handles</strong></span></div>
+      <div class="arrow"></div>
+      <div class="diamond-wrap"><div class="diamond"><span>Corners accepted?</span></div></div>
+      <div class="branch">
+        <div class="branch-col"><div class="branch-label">NO</div><div class="node process"><strong>Adjust Corners or Retake Photo</strong><small>Return to the corner editor / photo input</small></div></div>
+        <div class="branch-col"><div class="branch-label">YES</div><div class="node subprocess"><span class="stage-code">B1</span><span><strong>Perspective Rectification</strong><small>Homography → fixed sheet canvas + margin → corrected.png</small></span></div></div>
+      </div>
+      <div class="merge-note">Only accepted corners continue below; retake returns to photo input.</div>
+      <div class="arrow"></div>
+      <div class="node process"><strong>PIL Bicubic Resize to 768 × 1024 RGB</strong></div>
+      <div class="arrow"></div>
+      <div class="diamond-wrap"><div class="diamond"><span>Training JPEG round-trip enabled by model descriptor?</span></div></div>
+      <div class="branch">
+        <div class="branch-col"><div class="branch-label">YES</div><div class="node process"><strong>JPEG Quality-95 Encode / Decode</strong></div></div>
+        <div class="branch-col"><div class="branch-label">NO — ACTIVE MODEL</div><div class="node process"><strong>Keep Resized Pixels Directly</strong></div></div>
+      </div>
+      <div class="arrow"></div>
+      <div class="node output"><strong>Save Exact Scored Pixels as model_input.png</strong></div>
+      <div class="arrow"></div>
+      <div class="node process"><strong>ToTensor + ImageNet Normalize</strong><small>Mean [0.485, 0.456, 0.406] · Std [0.229, 0.224, 0.225]</small></div>
+      <div class="arrow"></div>
+      <div class="node input"><span><strong>Model Tensor [1, 3, 768, 1024]</strong></span></div>
+      <div class="arrow"></div>
+      <div class="node terminator"><strong>TO MODEL</strong></div>
+    </div>
+    <div class="footer"><span>CardioSentry system flowcharts</span><span>2 / 5</span></div>
+  </section>
+
+  <section class="page" id="model-flowchart">
+    <h2>C–D. ConvNeXt-V2 Tiny + CBAM Classification</h2>
+    <p class="subtitle">Requested model path: hierarchical feature extraction, attention refinement and nine served outputs.</p>
+    <div class="status-note"><strong>Implementation status:</strong> this CBAM architecture is trained and checkpointed in the research tree. The running application still serves the bare ConvNeXt-V2 Tiny descriptor; the CBAM wrapper, descriptor and active-model switch remain to be integrated.</div>
+    <div class="architecture">
+      <div class="arch-column compact">
+        <div class="node input"><span><strong>Input Tensor</strong><small>[1, 3, 768, 1024]</small></span></div>
+        <div class="arrow"></div>
+        <div class="node process"><strong>Patchify Stem</strong><small>4×4 convolution, stride 4 + LayerNorm<br>[1, 96, 192, 256]</small></div>
+        <div class="arrow"></div>
+        <div class="node subprocess"><strong>ConvNeXt-V2 Stage 1</strong><small>3 blocks · 96 channels · 192×256</small></div>
+        <div class="arrow"></div>
+        <div class="node subprocess"><strong>Downsample + Stage 2</strong><small>3 blocks · 192 channels · 96×128</small></div>
+        <div class="arrow"></div>
+        <div class="node subprocess"><strong>Downsample + Stage 3</strong><small>9 blocks · 384 channels · 48×64</small></div>
+        <div class="arrow"></div>
+        <div class="node subprocess"><strong>Downsample + Stage 4</strong><small>3 blocks · 768 channels · 24×32</small></div>
+        <div class="arrow"></div>
+        <div class="node output"><strong>Final Feature Map</strong><small>[1, 768, 24, 32]</small></div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-column compact">
+        <div class="attention-box">
+          <h3>Final-Stage CBAM</h3>
+          <div class="node process"><strong>Channel Attention</strong><small>Spatial average/max pool → shared MLP (reduction 16) → sigmoid → multiply</small></div>
+          <div class="arrow"></div>
+          <div class="node process"><strong>Spatial Attention</strong><small>Channel mean/max → concatenate → 7×7 convolution → sigmoid → multiply</small></div>
+          <div class="arrow"></div>
+          <div class="node output"><strong>Attention-Refined Map</strong><small>Shape remains [1, 768, 24, 32]</small></div>
+        </div>
+        <div class="arrow"></div>
+        <div class="node process"><strong>Final Normalization + Global Average Pooling</strong><small>768-dimensional feature vector</small></div>
+        <div class="arrow"></div>
+        <div class="node process"><strong>Linear Classification Head</strong><small>768 → 12 raw logits</small></div>
+        <div class="arrow"></div>
+        <div class="node process"><strong>Independent Sigmoid Scores</strong><small>One score per label; no softmax / no argmax</small></div>
+        <div class="arrow"></div>
+        <div class="node process"><strong>Apply Per-Class Thresholds</strong></div>
+        <div class="arrow"></div>
+        <div class="node warning"><strong>Suppress TInv, LQT and PRWP at Serving Boundary</strong><small>Heads remain in the checkpoint</small></div>
+        <div class="arrow"></div>
+        <div class="node output"><strong>9 Served Labels</strong><small>NORM · AF · IAVB · LBBB · RBBB · PAC · PVC · LAFB · LAE</small></div>
+      </div>
+    </div>
+    <div class="safety-note"><strong>Output wording:</strong> show “model score” and “flagged label,” not a confirmed diagnosis or calibrated probability. Real-photo calibration remains unestablished.</div>
+    <div class="footer"><span>CardioSentry system flowcharts</span><span>3 / 5</span></div>
+  </section>
+
+  <section class="page" id="gradcam-flowchart">
+    <h2>E. Grad-CAM Explainability Flowchart</h2>
+    <p class="subtitle">Post-hoc explanation for a user-selected positive abnormal label; it never changes the prediction.</p>
+    <div class="flow compact">
+      <div class="node terminator"><strong>GRAD-CAM</strong></div>
+      <div class="arrow"></div>
+      <div class="node input"><span><strong>Prediction Run + Stored model_input.png</strong></span></div>
+      <div class="arrow"></div>
+      <div class="diamond-wrap"><div class="diamond"><span>Positive abnormal label available and explanation requested?</span></div></div>
+      <div class="branch">
+        <div class="branch-col"><div class="branch-label">NO</div><div class="node process"><strong>Do Not Run Grad-CAM</strong><small>Return to the result screen</small></div></div>
+        <div class="branch-col"><div class="branch-label">YES</div><div class="node input"><span><strong>Select One Positive Abnormal Label</strong></span></div></div>
+      </div>
+      <div class="merge-note">The selected-label branch continues below.</div>
+      <div class="arrow"></div>
+      <div class="node process"><strong>Forward Pass and Capture Final Convolutional Activations</strong><small>Approximately [768, 24, 32] for the ConvNeXt-V2 target stage</small></div>
+      <div class="arrow"></div>
+      <div class="node process"><strong>Backpropagate the Selected Label Logit</strong><small>Compute class-specific gradients with respect to the target activations</small></div>
+      <div class="arrow"></div>
+      <div class="node process"><strong>Global-Average-Pool Gradients Across Space</strong><small>One importance weight per feature channel</small></div>
+      <div class="arrow"></div>
+      <div class="node process"><strong>Weighted Sum of Activation Maps + ReLU</strong><small>Create the coarse class-specific localization map</small></div>
+      <div class="arrow"></div>
+      <div class="node process"><strong>Normalize and Upsample to 768 × 1024</strong></div>
+      <div class="arrow"></div>
+      <div class="node output"><strong>Overlay Heatmap on the Stored Model Input</strong><small>Highlighted regions contributed positively to the selected score</small></div>
+      <div class="arrow"></div>
+      <div class="node process"><strong>Save Explainability Record and Images</strong><small>Method · model/run · target label · heatmap · overlay · timing</small></div>
+      <div class="arrow"></div>
+      <div class="diamond-wrap"><div class="diamond"><span>Explain another positive label?</span></div></div>
+      <div class="branch">
+        <div class="branch-col"><div class="branch-label">YES</div><div class="node process"><strong>Select the Next Label and Repeat</strong></div></div>
+        <div class="branch-col"><div class="branch-label">NO</div><div class="node terminator"><strong>RETURN RESULTS</strong></div></div>
+      </div>
+    </div>
+    <div class="safety-note"><strong>Interpretation:</strong> Grad-CAM shows influential image regions, not whether the model is correct and not which waveform feature a clinician would diagnose.</div>
+    <div class="footer"><span>CardioSentry system flowcharts</span><span>4 / 5</span></div>
+  </section>
+
+  <section class="page" id="urgency-recommendation-flowchart">
+    <h2>F. Urgency &amp; Recommendation Layer</h2>
+    <p class="subtitle">Implemented for the current model's nine served labels; convert stored positives and optional patient context into sourced next-step guidance.</p>
+    <div class="flow compact">
+      <div class="node terminator"><strong>STORED PREDICTION RUN</strong></div>
+      <div class="arrow"></div>
+      <div class="node input"><span><strong>Resolve Final Served Positives on the Backend</strong><small>Browser supplies only the run ID · suppressed heads are filtered again</small></span></div>
+      <div class="arrow"></div>
+      <div class="node warning"><strong>Verify the Clinical Rule Gate</strong><small>Exact reviewed model ID · served-label order · TInv/LQT/PRWP suppression policy</small></div>
+      <div class="arrow"></div>
+      <div class="node process"><strong>Ask Optional Context Questions</strong><small>Age group · symptoms · AF stroke-risk factors · known heart disease</small></div>
+      <div class="arrow"></div>
+      <div class="diamond-wrap"><div class="diamond" style="border-color: var(--red-strong); background: var(--red);"><span>Emergency warning signs reported?</span></div></div>
+      <div class="merge-note">Chest pain/pressure · severe/worsening trouble breathing · stroke signs · fainting with an abnormal flag</div>
+      <div class="branch">
+        <div class="branch-col"><div class="branch-label">YES — OVERRIDE</div><div class="node warning"><strong>EMERGENCY CARE NOW</strong><small>Call local emergency services. Do not drive or wait for another model result.</small></div></div>
+        <div class="branch-col"><div class="branch-label">NO</div><div class="node process"><strong>Continue Finding Review</strong></div></div>
+      </div>
+      <div class="merge-note">Only the “No emergency warning signs” branch continues below.</div>
+      <div class="arrow"></div>
+      <div class="node subprocess"><strong>Look Up Every Served Positive</strong><small>Versioned rules for NORM · AF · IAVB · LBBB · RBBB · PAC · PVC · LAFB · LAE</small></div>
+      <div class="arrow"></div>
+      <div class="node process"><strong>Apply Combination Modifiers</strong><small>Multiple abnormalities · RBBB+LAFB · IAVB+conduction block · AF+LAE · NORM+abnormal</small></div>
+      <div class="arrow"></div>
+      <div class="diamond-wrap"><div class="diamond"><span>Any prompt rule, symptom, history, or combination?</span></div></div>
+      <div class="branch">
+        <div class="branch-col"><div class="branch-label">YES</div><div class="node warning"><strong>PROMPT MEDICAL EVALUATION</strong><small>Arrange assessment and confirmation with a clinician-interpreted ECG.</small></div></div>
+        <div class="branch-col"><div class="branch-label">NO</div><div class="node output"><strong>ROUTINE CLINICIAN FOLLOW-UP</strong><small>Arrange non-emergency confirmation and interpretation.</small></div></div>
+      </div>
+      <div class="merge-note">Use the highest priority produced by any symptom, finding, or combination.</div>
+      <div class="arrow"></div>
+      <div class="node subprocess"><strong>Generate the Recommendation</strong><small>Urgency · reasons · next actions · condition notes · sources · safety net · limitation</small></div>
+      <div class="arrow"></div>
+      <div class="node output"><strong>Display Guidance with the Result</strong><small>Initial conditional guidance can be refined without persisting patient answers</small></div>
+      <div class="arrow"></div>
+      <div class="node terminator"><strong>RETURN GUIDANCE</strong></div>
+    </div>
+    <div class="safety-note"><strong>Required safeguards:</strong> a higher model score does not mean greater clinical urgency. Symptoms can override the label rules; findings come only from the stored run; suppressed heads never receive guidance; and the output is screening support, not diagnosis or treatment.</div>
+    <div class="footer"><span>CardioSentry system flowcharts</span><span>5 / 5</span></div>
+  </section>
+</body>
+</html>

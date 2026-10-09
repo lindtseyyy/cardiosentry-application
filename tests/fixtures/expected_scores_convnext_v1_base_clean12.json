@@ -1,0 +1,19 @@
+{
+  "model": "convnext_v1_base_clean12",
+  "image": "corpus_sheet.jpg",
+  "source": "CardioSentry serving path, CPU float32 (fit=height_pad); the run never evaluated this older-corpus sheet. Weights/loader parity against the run's own stored validation probabilities was checked separately on a clean12 render (max |d| 8.4e-4).",
+  "scores": {
+    "NORM": 7.980334339663386e-05,
+    "SB": 1.3199188288126606e-05,
+    "STACH": 0.0008907977608032525,
+    "LBBB": 0.0002839505032170564,
+    "LQT": 0.605701208114624,
+    "AF": 0.9969993829727173,
+    "AFL": 0.01690390147268772,
+    "3AVB": 0.00016071752179414034,
+    "2AVB": 0.0009886435000225902,
+    "1AVB": 0.00011960782285314053,
+    "STEMI": 0.0012334729544818401,
+    "STE": 0.002424448262900114
+  }
+}

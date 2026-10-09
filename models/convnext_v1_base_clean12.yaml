@@ -1,0 +1,83 @@
+schema_version: 1
+
+id: convnext_v1_base_clean12
+display_name: "CardioSentry ConvNeXt-V1 Base clean12 @768x1024"
+version: convnext_v1_base_clean12_g6e2xlarge_seed42
+notes: "best.pt from MyDrive/CardioSentry/new_runs/convnextv1_base_clean12_a100_seed42
+        (run convnext_v1_base_clean12_g6e2xlarge_seed42, config fingerprint
+        580ebaefca171351). Trained on the HEEDB clean12 renders with 12
+        independent sigmoid heads; served with the EMA weights of epoch 6, the
+        source training selected on validation (pathology macro AP 0.925).
+        Thresholds are the run's validation-tuned per-label F1 thresholds.
+        Parity, 2026-10-03: the app loader on the clean12 render of validation
+        record MUSE_20200128_132909_99000 reproduces the run's stored
+        validation probabilities within 8.4e-4 (CPU fp32 vs training BF16).
+        The training sheets carry no printed header, so no header box is
+        measured. Rendered sheets are edge-to-edge and fit-and-padded (fit:
+        height_pad), not stretched."
+
+weights: weights/convnext_v1_base_clean12_best.pt
+expected_sha256: 7e2583a6a9705eae27501a512c8a3c05929e9709713ff2b525c4ae4f4391078b
+expected_protocol_fingerprint: 580ebaefca171351
+
+architecture:
+  module: arch.convnext_v1_clean12
+  registry_key: convnext_base_clean12
+  pretrained: false
+  call_style: tensor
+  views: [[768, 1024]]
+
+labels: [NORM, SB, STACH, LBBB, LQT, AF, AFL, 3AVB, 2AVB, 1AVB, STEMI, STE]
+display_names:
+  NORM: "Normal ECG"
+  SB: "Sinus Bradycardia"
+  STACH: "Sinus Tachycardia"
+  LBBB: "Left Bundle Branch Block"
+  LQT: "Long QT"
+  AF: "Atrial Fibrillation"
+  AFL: "Atrial Flutter"
+  3AVB: "Third-Degree (Complete) AV Block"
+  2AVB: "Second-Degree AV Block"
+  1AVB: "First-Degree AV Block"
+  STEMI: "ST-Elevation Myocardial Infarction"
+  STE: "ST Elevation"
+
+# validation_tuned_thresholds.json from the run, in label order.
+thresholds:
+  source: explicit
+  explicit: [0.7272012233734131, 0.7193835973739624, 0.740174412727356,
+             0.7114308476448059, 0.7185943722724915, 0.7634837031364441,
+             0.7461389899253845, 0.7476159334182739, 0.8918110132217407,
+             0.6943026781082153, 0.6201616525650024, 0.7287483215332031]
+
+output:
+  suppressed_labels: []
+
+# The clean12 render: LANCZOS fit to height 768 (994 px wide), then a
+# symmetric 15 px paper-colour pad to 1024. No JPEG stage (lossless PNG).
+preprocess:
+  canvas: [1650, 1275]
+  margin_px: 18
+  input_size: [768, 1024]
+  resample: pil_lanczos
+  fit: height_pad
+  match_training_jpeg: false
+  jpeg_quality: 95
+  normalize:
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
+
+runtime:
+  device: cpu
+  dtype: float32
+  num_threads: null
+
+explain:
+  enabled: true
+  target_layer: stages.3
+  header_box: null
+  header_redacted_in_training: false
+
+verify:
+  expected_scores: tests/fixtures/expected_scores_convnext_v1_base_clean12.json
+  score_tolerance: 2.0e-3
