@@ -25,17 +25,17 @@ export default function ModelBadge({
   device,
 }: ModelBadgeProps) {
   return (
-    <div className="model-badge">
-      <span className="name">{displayName}</span>
-      {version ? <span className="meta">v{version}</span> : null}
-      {id ? <span className="meta mono">{id}</span> : null}
+    <div className="flex flex-wrap gap-x-3.5 gap-y-2 items-center bg-panel-2 border border-line rounded-card px-4 py-3">
+      <span className="font-bold">{displayName}</span>
+      {version ? <span className="text-ink-muted text-[0.85rem]">v{version}</span> : null}
+      {id ? <span className="tabular-nums text-[0.82rem] text-accent">{id}</span> : null}
       {checkpointShort ? (
-        <span className="mono">sha&nbsp;{checkpointShort}</span>
+        <span className="tabular-nums text-[0.82rem] text-accent">sha&nbsp;{checkpointShort}</span>
       ) : null}
       {formatInputSize(inputSize) ? (
-        <span className="meta">input&nbsp;{formatInputSize(inputSize)}</span>
+        <span className="text-ink-muted text-[0.85rem]">input&nbsp;{formatInputSize(inputSize)}</span>
       ) : null}
-      {device ? <span className="meta">{device}</span> : null}
+      {device ? <span className="text-ink-muted text-[0.85rem]">{device}</span> : null}
     </div>
   );
 }

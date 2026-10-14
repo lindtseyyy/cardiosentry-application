@@ -9,7 +9,8 @@ changes.
 
 ```
 models/
-├── active.yaml -> convnext_v1_base_clean12.yaml  # which model the app serves
+├── active.yaml -> convnext_v1_base_rfpn_clean12.yaml  # which model the app serves
+├── convnext_v1_base_rfpn_clean12.yaml     # HEEDB clean12 ConvNeXt-V1 Base + RFPN, 12 heads
 ├── convnext_v1_base_clean12.yaml          # HEEDB clean12 ConvNeXt-V1 Base, 12 heads
 ├── convnextv2_tiny_v1img_v1.yaml          # V1 clean-image model, 12 heads / 9 served
 ├── efficientnetv2_s_nat768.yaml           # round-3 PLAIN baseline, 768x1024
@@ -19,6 +20,7 @@ models/
 ├── resnet50_dual.yaml                     # round-2 dual-stream 384+768
 ├── resnet50_v1.yaml                       # round-1, 384px, tensor call style
 └── weights/
+    ├── convnext_v1_base_rfpn_clean12_inference.pt  # 360 MB inference export
     ├── convnext_v1_base_clean12_best.pt   # 1.4 GB full training checkpoint
     ├── convnextv2_tiny_v1img_v1.pt
     ├── efficientnetv2_s_nat768.pt
@@ -34,6 +36,10 @@ models/
 The checkpoints are the training outputs in the research tree; copy them here:
 
 ```bash
+# clean12 ConvNeXt-V1 Base + RFPN: inference.pt of MyDrive/CardioSentry/new_runs/
+#   convnext_v1_base_rfpn_clean12_colab_a100_seed42
+cp ../prototype-results/convnext_v1_base_rfpn_clean12_colab_a100_seed42/inference.pt \
+   weights/convnext_v1_base_rfpn_clean12_inference.pt
 # clean12 ConvNeXt-V1 Base: best.pt of MyDrive/CardioSentry/new_runs/
 #   convnextv1_base_clean12_a100_seed42 (= s3://cardiosentry/runs/
 #   convnext_v1_base_clean12_g6e2xlarge_seed42/best.pt)
@@ -59,7 +65,9 @@ start** instead of silently invalidating every recorded prediction (§16 #18).
 Full training checkpoints are fine as-is: the runner memory-maps every `.pt`,
 so a clean12 `best.pt` (raw + EMA weights, optimizer, RNG state) costs only the
 weights it serves, and when the blob records `selected_weight_source` the
-runner serves that state_dict (`ema` for the clean12 run), not `model`.
+runner serves that state_dict (`ema` for the clean12 run), not `model`. A
+clean12 `inference.pt` export (no `optimizer`, no `model_ema`) already holds the
+selected weights under `model`; its `selected_weight_source` is provenance.
 
 ## The descriptor format
 

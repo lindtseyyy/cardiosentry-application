@@ -15,6 +15,7 @@ Symptom = Literal[
     "chest_pain",
     "severe_shortness_of_breath",
     "fainting",
+    "fainting_exertion_or_supine",
     "palpitations",
     "dizziness",
     "stroke_signs",
@@ -26,6 +27,9 @@ RiskFactor = Literal[
     "prior_stroke_tia",
     "vascular_disease",
     "known_heart_disease",
+    "known_af_flutter",
+    "known_lbbb",
+    "pacemaker_icd",
 ]
 # Four tiers of increasing urgency: no extra action (Normal), routine review,
 # same-day assessment, emergency now.  See backend/services/guidance.py.
@@ -58,7 +62,7 @@ class GuidanceSource(BaseModel):
 class FindingGuidance(BaseModel):
     finding: str
     display_name: str
-    # The condition's own baseline tier, before symptoms and combinations.
+    # The condition's effective baseline tier, before symptoms and combinations.
     tier: UrgencyLevel
     summary: str
     next_steps: list[str]
@@ -70,6 +74,12 @@ class GuidanceContext(BaseModel):
     symptoms: list[Symptom]
     risk_factors: list[RiskFactor]
     complete: bool
+
+
+class GuidancePriorityQuestion(BaseModel):
+    symptom: Symptom
+    question: str
+    reason: str
 
 
 class GuidanceResponse(BaseModel):
@@ -91,5 +101,7 @@ class GuidanceResponse(BaseModel):
     finding_guidance: list[FindingGuidance]
     combination_notes: list[str]
     cautions: list[str]
+    priority_question: GuidancePriorityQuestion | None = None
+    scope_note: str
     sources: list[GuidanceSource]
     disclaimer: str

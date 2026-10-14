@@ -99,25 +99,28 @@ def _select_state(model_id: str, blob) -> tuple[dict, str | None]:
     The clean12 runs keep raw and EMA weights side by side (`model`,
     `model_ema`) and record which one won on validation in
     `selected_weight_source`; serving the other one would silently serve a
-    model whose numbers no report describes. Older blobs carry no such key and
-    keep their `model` entry. A `torch.compile`d module saves every key under
-    `_orig_mod.`, which is stripped so `strict=True` still checks the names.
+    model whose numbers no report describes. Their `inference.pt` export
+    (no `optimizer`, no `model_ema`) already holds the selected weights under
+    `model` and keeps `selected_weight_source` as provenance only. Older blobs
+    carry no such key and keep their `model` entry. A `torch.compile`d module
+    saves every key under `_orig_mod.`, which is stripped so `strict=True`
+    still checks the names.
     """
     if not (isinstance(blob, dict) and "model" in blob):
         return blob, None
     source = blob.get("selected_weight_source")
-    if source is None:
+    if source is not None and source not in ("raw", "ema"):
+        raise ModelLoadError(
+            f"{model_id}: unknown selected_weight_source {source!r}")
+    if source is None or ("optimizer" not in blob and "model_ema" not in blob):
         state = blob["model"]
-    elif source in ("raw", "ema"):
+    else:
         key = "model_ema" if source == "ema" else "model"
         state = blob.get(key)
         if not state:
             raise ModelLoadError(
                 f"{model_id}: checkpoint selects {source!r} weights but has no "
                 f"{key!r} entry")
-    else:
-        raise ModelLoadError(
-            f"{model_id}: unknown selected_weight_source {source!r}")
     if state and all(k.startswith(_COMPILED_PREFIX) for k in state):
         state = {k[len(_COMPILED_PREFIX):]: v for k, v in state.items()}
     return state, source
@@ -178,7 +181,7 @@ def load_model(ld: LoadedDescriptor) -> LoadedModel:
         fingerprint = (blob.get("protocol_fingerprint")
                        or blob.get("fingerprint")
                        or blob.get("config_fingerprint"))
-        epoch = blob.get("epoch")
+        epoch = blob.get("epoch", blob.get("best_epoch"))
     if desc.expected_protocol_fingerprint and fingerprint != desc.expected_protocol_fingerprint:
         raise ModelLoadError(
             f"{desc.id}: protocol fingerprint mismatch — checkpoint says "

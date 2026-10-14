@@ -6,6 +6,7 @@ import ExplainPanel from "../components/ExplainPanel";
 import GuidancePanel from "../components/GuidancePanel";
 import PredictionLabels from "../components/PredictionLabels";
 import { formatDateTime } from "../utils/date";
+import { btn, loadingBlock, msg, panel, panelTitle, sectionTitle } from "../ui";
 
 export interface CaptureDetailScreenProps {
   captureId: string;
@@ -33,8 +34,8 @@ function RunView({
   );
   const displayNames = run.descriptor_snapshot?.display_names ?? fallbackDisplayNames;
   return (
-    <div className="panel">
-      <h2>Prediction · {formatDateTime(run.created_utc)}</h2>
+    <div className={`${panel} mb-4.5`}>
+      <h2 className={`${panelTitle} mt-0 mx-0`}>Prediction · {formatDateTime(run.created_utc)}</h2>
       <PredictionLabels
         labels={labels}
         displayNames={displayNames}
@@ -111,35 +112,35 @@ export default function CaptureDetailScreen({
   }
 
   if (loading) {
-    return <div className="loading-block">Loading capture…</div>;
+    return <div className={loadingBlock}>Loading capture…</div>;
   }
   if (error && !record) {
-    return <div className="msg error">{error}</div>;
+    return <div className={msg.error}>{error}</div>;
   }
   if (!record) return null;
 
   return (
     <div>
-      <div className="spread">
-        <h1 className="section-title" style={{ marginBottom: 0 }}>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h1 className={`${sectionTitle} m-0`}>
           Capture details
         </h1>
         <button
           type="button"
-          className="danger small"
+          className={`${btn.danger} ${btn.small}`}
           onClick={deleteCapture}
           disabled={deleting}
         >
-          {deleting ? "Deleting…" : "Delete capture"}
+          {deleting ? "Deleting…" : "Delete ECG Record"}
         </button>
       </div>
-      <p className="capture-id mono">{captureId}</p>
+      <p className="tabular-nums text-[0.82rem] text-ink-muted mt-1 mx-0 mb-4">{captureId}</p>
 
-      {error ? <div className="msg error">{error}</div> : null}
-      {deleteError ? <div className="msg error">{deleteError}</div> : null}
+      {error ? <div className={msg.error}>{error}</div> : null}
+      {deleteError ? <div className={msg.error}>{deleteError}</div> : null}
 
       {(record.prediction_runs ?? []).length === 0 ? (
-        <div className="panel muted">No prediction runs yet.</div>
+        <div className={`${panel} mb-4.5 text-ink-muted`}>No prediction runs yet.</div>
       ) : (
         (record.prediction_runs ?? []).map((run) => (
           <RunView

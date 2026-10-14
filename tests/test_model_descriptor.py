@@ -85,7 +85,14 @@ def test_checkpoint_selected_weights_are_served():
     state, source = runner._select_state("m", {"model": raw, "thresholds": [0.5]})
     assert source is None and state is raw
 
+    # The inference.pt export holds only the selected weights, under `model`.
+    state, source = runner._select_state(
+        "m", {"model": ema, "selected_weight_source": "ema", "best_epoch": 7})
+    assert source == "ema" and list(state) == ["w"] and state["w"].item() == 1.0
+
+    # A full training checkpoint that selects EMA must never fall back to raw.
     with pytest.raises(runner.ModelLoadError, match="no 'model_ema'"):
-        runner._select_state("m", {"model": raw, "selected_weight_source": "ema"})
+        runner._select_state(
+            "m", {"model": raw, "optimizer": {}, "selected_weight_source": "ema"})
     with pytest.raises(runner.ModelLoadError, match="unknown selected_weight_source"):
         runner._select_state("m", {"model": raw, "selected_weight_source": "swa"})

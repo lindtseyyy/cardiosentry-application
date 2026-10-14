@@ -20,6 +20,7 @@ import PreviewScreen from "./screens/PreviewScreen";
 import PrivacyScreen from "./screens/PrivacyScreen";
 import PrivacyModal from "./components/PrivacyModal";
 import ResultScreen from "./screens/ResultScreen";
+import { btn, loadingScreen, msg, spinnerLarge } from "./ui";
 
 // Keep the preview implementation available, but skip it in the patient flow.
 // Flip this flag to restore the corrected/model-input review step.
@@ -40,6 +41,9 @@ type Screen =
   | { name: "result"; captureId: string; runId: string; prediction?: PredictionResponse };
 
 const ID = "[A-Za-z0-9_.-]+";
+const menuItem = "flex items-center w-full px-3.5 py-2.5 min-h-11 border-0 rounded-control text-[0.92rem] text-left [transition:background_0.12s_ease,color_0.12s_ease]";
+const menuItemActive = "bg-panel-3 text-accent-strong font-semibold";
+const menuItemInactive = "bg-transparent text-ink font-medium hover:bg-panel-3 hover:text-accent-strong focus-visible:bg-panel-3 focus-visible:text-accent-strong";
 
 function screenFromHash(): Screen {
   const h = window.location.hash;
@@ -94,17 +98,17 @@ function uploadFromRecord(rec: CaptureRecord): CaptureUploadResponse | null {
 function Restoring({ error, onNew }: { error: string | null; onNew: () => void }) {
   if (!error) {
     return (
-      <div className="loading-block screen-center" aria-live="polite">
-        <span className="spinner" />
+      <div className={loadingScreen} aria-live="polite">
+        <span className={spinnerLarge} />
         Restoring your capture…
       </div>
     );
   }
   return (
-    <div className="loading-block screen-center">
-      <div className="msg error">{error}</div>
-      <div className="hstack mt" style={{ justifyContent: "center" }}>
-        <button type="button" className="primary" onClick={onNew}>
+    <div className={loadingScreen}>
+      <div className={msg.error}>{error}</div>
+      <div className="flex items-center justify-center gap-3 flex-wrap mt-3">
+        <button type="button" className={btn.primary} onClick={onNew}>
           Start a new ECG
         </button>
       </div>
@@ -313,8 +317,8 @@ export default function App() {
   function renderScreen() {
     if (user === undefined) {
       return (
-        <div className="loading-block screen-center" aria-live="polite">
-          <span className="spinner" />
+        <div className={loadingScreen} aria-live="polite">
+          <span className={spinnerLarge} />
           Checking sign-in…
         </div>
       );
@@ -395,29 +399,29 @@ export default function App() {
 
   return (
     <AppContext.Provider value={ctx}>
-      <div className="app">
-        <div className="topbar">
+      <div className="max-w-[720px] wide:max-w-[880px] min-h-dvh mx-auto px-4 pb-[calc(8px_+_env(safe-area-inset-bottom))] flex flex-col print:max-w-none print:min-h-0 print:p-0">
+        <div className="relative flex items-center justify-between gap-3 py-3.5 border-b border-line mb-4.5 print:hidden">
           <button
             type="button"
-            className="brand brand-link"
+            className="flex items-center gap-2 min-h-11 p-0 bg-transparent border-0 rounded-control text-ink text-[1.15rem] font-bold tracking-[0.2px] hover:text-accent focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent focus-visible:outline-offset-4"
             onClick={goCapture}
-            aria-label="CardioSentry — New ECG"
+            aria-label="CardioSentry — Classify ECG"
           >
-            <img className="brand-logo" src="/favicon.png" alt="" />
+            <img className="size-6 object-contain flex-none" src="/favicon.png" alt="" />
             CardioSentry
           </button>
           {user ? (
-            <nav className="topbar-nav">
+            <nav className="flex items-center gap-2">
               <button
                 type="button"
-                className="small ghost topbar-nav-button nav-new"
+                className={`${btn.small} bg-matte-green border-matte-green text-white font-semibold hover:bg-matte-green-hover hover:border-matte-green-hover max-nav:hidden`}
                 onClick={goCapture}
               >
-                New ECG
+                Classify ECG
               </button>
               <button
                 type="button"
-                className="small ghost topbar-nav-button nav-history"
+                className={`${btn.small} ${btn.matteBlue} max-nav:hidden`}
                 onClick={goHistory}
                 aria-current={screen.name === "history" ? "page" : undefined}
               >
@@ -425,19 +429,19 @@ export default function App() {
               </button>
               <button
                 type="button"
-                className="small ghost topbar-nav-button nav-settings"
+                className={`${btn.small} bg-panel-3 border-line-strong text-ink font-semibold hover:bg-panel-hover hover:border-accent hover:text-accent-strong aria-[current=page]:border-accent aria-[current=page]:text-accent-strong max-nav:hidden`}
                 onClick={goAccount}
                 aria-current={screen.name === "account" ? "page" : undefined}
               >
                 Settings
               </button>
-              <span className="topbar-user" title={`Signed in as ${user}`}>
+              <span className="inline-flex items-center px-2 min-h-11 text-ink-muted text-[0.88rem] font-medium max-w-35 truncate cursor-default select-text max-nav:max-w-27.5 max-nav:text-[0.82rem] max-nav:px-1 max-tiny:max-w-20 max-tiny:text-[0.78rem]" title={`Signed in as ${user}`}>
                 {user}
               </span>
               <button
                 ref={hamburgerRef}
                 type="button"
-                className="topbar-hamburger"
+                className="hidden max-nav:inline-flex items-center justify-center size-11 min-h-11 min-w-11 p-0 bg-panel-3 border-line rounded-control text-ink [transition:background_0.15s_ease,border-color_0.15s_ease,transform_0.05s_ease] hover:bg-panel-hover hover:border-accent hover:text-accent-strong focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent focus-visible:outline-offset-2 max-tiny:size-10 max-tiny:min-w-10 max-tiny:min-h-10"
                 onClick={() => setMenuOpen((open) => !open)}
                 aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
                 aria-expanded={menuOpen}
@@ -468,21 +472,21 @@ export default function App() {
                 </svg>
               </button>
               {menuOpen ? (
-                <div id="topbar-menu" ref={menuRef} className="topbar-menu" role="menu">
+                <div id="topbar-menu" ref={menuRef} className="absolute top-[calc(100%+6px)] right-0 min-w-45 bg-panel border border-line rounded-card shadow-menu p-1.5 flex flex-col gap-1 z-100 animate-menu-in" role="menu">
                   <button
                     type="button"
-                    className={`topbar-menu-item${screen.name === "capture" ? " active" : ""}`}
+                    className={`${menuItem} ${screen.name === "capture" ? menuItemActive : menuItemInactive}`}
                     onClick={() => {
                       setMenuOpen(false);
                       goCapture();
                     }}
                     role="menuitem"
                   >
-                    New ECG
+                    Classify ECG
                   </button>
                   <button
                     type="button"
-                    className={`topbar-menu-item${screen.name === "history" ? " active" : ""}`}
+                    className={`${menuItem} ${screen.name === "history" ? menuItemActive : menuItemInactive}`}
                     onClick={() => {
                       setMenuOpen(false);
                       goHistory();
@@ -493,7 +497,7 @@ export default function App() {
                   </button>
                   <button
                     type="button"
-                    className={`topbar-menu-item${screen.name === "account" ? " active" : ""}`}
+                    className={`${menuItem} ${screen.name === "account" ? menuItemActive : menuItemInactive}`}
                     onClick={() => {
                       setMenuOpen(false);
                       goAccount();
@@ -509,18 +513,18 @@ export default function App() {
         </div>
 
         {error ? (
-          <div className="backend-banner">
+          <div className="flex items-center gap-3 flex-wrap bg-error-wash border border-error-line text-error-ink rounded-card px-4 py-3 mb-4">
             <span>{error}</span>
-            <button type="button" onClick={load}>
+            <button type="button" className="bg-emergency border-emergency text-white ml-auto" onClick={load}>
               Retry
             </button>
           </div>
         ) : null}
 
-        <main className="app-main">{renderScreen()}</main>
+        <main className="flex-[1_0_auto] flex flex-col pb-7">{renderScreen()}</main>
 
-        <footer className="app-footer">
-          <button type="button" className="link-button" onClick={openPrivacy}>
+        <footer className="pt-3 border-t border-line text-center print:hidden">
+          <button type="button" className={btn.link} onClick={openPrivacy}>
             Data Privacy Notice
           </button>
         </footer>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Point } from "../api/types";
+import { btn, loadingBlock } from "../ui";
 
 /**
  * QuadEditor — canvas editor for the four paper corners.
@@ -275,28 +276,28 @@ export default function QuadEditor({
 
   return (
     <div>
-      <div ref={containerRef} className="quad-editor">
+      <div ref={containerRef} className="relative touch-none select-none rounded-card overflow-hidden border border-line-strong bg-black">
         {img ? (
           <canvas
             ref={canvasRef}
-            className={dragIndex !== null ? "dragging" : ""}
+            className={`block w-full h-auto ${dragIndex !== null ? "cursor-grabbing" : "cursor-grab"}`}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
           />
         ) : (
-          <div className="loading-block">Loading preview…</div>
+          <div className={loadingBlock}>Loading preview…</div>
         )}
       </div>
 
-      <div className="quad-toolbar">
-        <button type="button" className="small ghost" onClick={resetToAuto}>
+      <div className="flex gap-2 flex-wrap mt-3">
+        <button type="button" className={`${btn.small} ${btn.ghost}`} onClick={resetToAuto}>
           Reset to auto
         </button>
         <button
           type="button"
-          className="small ghost"
+          className={`${btn.small} ${btn.ghost}`}
           onClick={undo}
           disabled={undoStack.length === 0}
         >

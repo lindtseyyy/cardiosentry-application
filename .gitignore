@@ -14,4 +14,4 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 
-file-outputs/
+file-ouputs/

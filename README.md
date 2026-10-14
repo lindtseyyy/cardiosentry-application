@@ -1,6 +1,6 @@
 # CardioSentry Web Application
 
-Last verified against the tree: **2026-10-08**.
+Last verified against the tree: **2026-10-14**.
 
 An **instrument, not a product**: a password-account web app that puts a real
 smartphone photograph of a real printed 12-lead ECG sheet into the CardioSentry
@@ -28,6 +28,8 @@ docker start postgres-db-cardiosentry
 # Restore into an empty database: see §Security & privacy, "Legacy JSON archive".
 
 # 3. weights (gitignored training artifacts — copy from the research tree)
+cp ../prototype-results/convnext_v1_base_rfpn_clean12_colab_a100_seed42/inference.pt \
+   models/weights/convnext_v1_base_rfpn_clean12_inference.pt
 cp ../prototype-results/NEW_convnext_v2_tiny_V1/best.pt models/weights/convnextv2_tiny_v1img_v1.pt
 cp ../prototype-results/hybrid_v1/resnet50_hires/weights/best.pt models/weights/resnet50_hires.pt
 cp ../prototype-results/hybrid_v1/resnet50_dual/weights/best.pt  models/weights/resnet50_dual.pt
@@ -37,7 +39,7 @@ cp ../prototype-results/v1/resnet50/weights/best.pt              models/weights/
 python3 -m pytest -q
 python3 scripts/verify_model.py
 
-# 5. frontend build (needs Node ≥ 18)
+# 5. frontend build (needs Node ≥ 20)
 (cd frontend && npm install && npm run build)
 
 # 6. serve API + frontend on the LAN (single process, same origin)
@@ -71,6 +73,120 @@ The camera hand-off uses `<input capture>` which works over plain HTTP;
 live `getUserMedia` preview and
 PWA install arrive with HTTPS (`scripts/make_cert.sh`, plan §15.3).
 
+## Set up on another computer
+
+The steps below take a fresh machine from `git clone` to a running server.
+The app was developed on Linux; macOS should work the same way, and on Windows
+use WSL2 (the scripts are bash and `models/active.yaml` is a symlink).
+
+**Prerequisites:** Git, Python ≥ 3.12 with pip, Node.js ≥ 20 with npm and
+Docker. The weights alone take 2.6 GB of disk; for Grad-CAM memory use see
+§Memory.
+
+**What the repository does *not* contain:** model weights (`models/weights/`,
+2.6 GB), `.env`, the database, `captures/` (PHI) and `certs/`. You copy or
+create these yourself.
+
+```bash
+# 1. clone
+git clone https://github.com/lindtseyyy/cardiosentry-application.git
+cd cardiosentry-application
+
+# 2. Python dependencies. Linux: install the CPU-only PyTorch wheels first,
+#    or pip pulls the multi-GB CUDA build. Skip that line on macOS.
+python3 -m pip install --user --break-system-packages torch torchvision \
+    --index-url https://download.pytorch.org/whl/cpu
+python3 -m pip install --user --break-system-packages -e '.[dev]'
+# (--break-system-packages is for Debian/Ubuntu system Python. A virtualenv
+#  also works: python3 -m venv .venv && . .venv/bin/activate, then drop
+#  --user --break-system-packages from both commands.)
+
+# 3. PostgreSQL 16 in Docker, published on loopback only
+PGPASS=$(openssl rand -hex 24)        # hex: no URL escaping needed
+docker run -d --name postgres-db-cardiosentry \
+    -e POSTGRES_USER=cardiosentry -e POSTGRES_PASSWORD="$PGPASS" \
+    -e POSTGRES_DB=cardiosentry \
+    -p 127.0.0.1:5432:5432 \
+    -v postgres-db-cardiosentry-data:/var/lib/postgresql/data \
+    postgres:16-alpine
+# after a reboot: docker start postgres-db-cardiosentry
+
+# 4. settings: .env is gitignored and holds the database secret
+cp .env.example .env
+echo "CARDIOSENTRY_DATABASE_URL=postgresql://cardiosentry:$PGPASS@127.0.0.1:5432/cardiosentry" >> .env
+chmod 600 .env
+# optionally set CARDIOSENTRY_PRIVACY_CONTROLLER / _CONTACT (see .env.example)
+
+# 5. weights: copy ALL nine .pt files from an existing install (or the
+#    research tree, see §Run it step 3). Startup validates every descriptor in
+#    models/, so one missing file stops the server.
+mkdir -p models/weights
+rsync -av --progress <old-host>:<path>/cardiosentry-application/models/weights/ models/weights/
+
+# 6. frontend
+(cd frontend && npm ci && npm run build)
+
+# 7. checks: the self-check compares scores with the descriptor's verify block
+python3 scripts/verify_model.py
+python3 -m pytest -q                  # optional, takes minutes on CPU
+
+# 8. serve
+python3 -m backend.main
+```
+
+Each weight file is checked against its descriptor's `expected_sha256` at
+startup. A corrupt or partial copy fails with a hash-mismatch message; copy it
+again rather than editing the hash. Every descriptor in `models/` needs its
+weight file:
+
+| descriptor | weight file |
+|---|---|
+| `convnext_v1_base_clean12` | `convnext_v1_base_clean12_best.pt` |
+| `convnext_v1_base_rfpn_clean12` | `convnext_v1_base_rfpn_clean12_inference.pt` |
+| `convnextv2_tiny_v1img_v1` | `convnextv2_tiny_v1img_v1.pt` |
+| `efficientnetv2_s_cbam_nat768` | `efficientnetv2_s_cbam_nat768.pt` |
+| `efficientnetv2_s_nat768` | `efficientnetv2_s_nat768.pt` |
+| `resnet50_cbam_nat768` | `resnet50_cbam_nat768.pt` (also used by the test suite) |
+| `resnet50_dual` | `resnet50_dual.pt` |
+| `resnet50_hires` | `resnet50_hires.pt` |
+| `resnet50_v1` | `resnet50_v1.pt` |
+
+**First sign-in.** On an empty database, the first boot creates the account
+`admin` with password `admin` and logs a WARNING. Sign in and change the
+password at once under **Settings**.
+
+**Phone access.** The phone and computer must be on the same Wi-Fi. If a
+firewall is active, open the port (Ubuntu: `sudo ufw allow 8000/tcp`). For
+HTTPS (live camera preview, PWA install), install
+[mkcert](https://github.com/FiloSottile/mkcert), run `./scripts/make_cert.sh`,
+and start with the `uvicorn … --ssl-keyfile` command printed in that script.
+The certificate is issued for the new machine's LAN IP, so run it there.
+
+**Choosing the served model.** `models/active.yaml` is a symlink in git. If a
+checkout turns it into a plain text file (Windows without symlink support),
+set `CARDIOSENTRY_ACTIVE_MODEL=<model id>` in `.env` instead.
+
+**Optional: move existing records.** To bring accounts, captures and runs
+from an old machine, restore the database **before the new install's first
+boot**. After the app has started, the database already holds a schema and an
+`admin` row, and the restore conflicts with them. The dump and the image
+folder are PHI: move them over an encrypted channel and delete the copies
+afterwards.
+
+```bash
+# old machine
+docker exec postgres-db-cardiosentry pg_dump -U cardiosentry -Fc cardiosentry > cardiosentry.dump
+tar czf captures.tgz captures/
+
+# new machine: after step 4, before step 7
+docker exec -i postgres-db-cardiosentry pg_restore -U cardiosentry -d cardiosentry --no-owner < cardiosentry.dump
+tar xzf captures.tgz
+```
+
+Account passwords move with the dump. The legacy JSON archive
+(`~/.local/share/cardiosentry/legacy-json/`) lives outside the repo and does
+not move with these steps; copy it only if you need it as a restore source.
+
 ## What it does, stage by stage
 
 ```
@@ -82,8 +198,8 @@ upload ──▶ ingest ──▶ detect ──▶ corner edit ──▶ rectify
                                                                   q95 JPEG)
 ```
 
-After prediction, runs from a model with reviewed rules (the clean12
-ConvNeXt-V1 Base and the earlier ConvNeXt-V2 V1 model) also pass their final
+After prediction, runs from a model with reviewed rules (the two clean12
+ConvNeXt-V1 Base models and the earlier ConvNeXt-V2 V1 model) also pass their final
 served positives into a versioned **Urgency and Recommended Next Steps**
 decision-support layer with four tiers of increasing urgency: **Green**
 (read as Normal, no extra action from this result), **Yellow**
@@ -226,7 +342,9 @@ python3 scripts/export_dataset.py --out captures_export.csv
 
 | id | checkpoint | input (h×w) | call style | purpose |
 |---|---|---|---|---|
-| `convnextv2_tiny_v1img_v1` *(active)* | convnextv2_v1img | 768×1024 | `tensor` | ConvNeXt-V2 Tiny trained on the clean-only V1 image corpus. Twelve checkpoint heads; nine currently served, with TInv, LQT, and PRWP suppressed reversibly |
+| `convnext_v1_base_rfpn_clean12` *(active)* | convnext_v1_rfpn_clean12 | 768×1024 | `tensor` | ConvNeXt-V1 Base + Residual FPN (`CS_FUSION=rfpn`) trained on the HEEDB clean12 renders; 12 heads, all served. Test pathology macro AP 0.923 |
+| `convnext_v1_base_clean12` | convnext_v1_clean12 | 768×1024 | `tensor` | the same run recipe without the FPN neck (plain V1 Base); 12 heads, all served |
+| `convnextv2_tiny_v1img_v1` | convnextv2_v1img | 768×1024 | `tensor` | ConvNeXt-V2 Tiny trained on the clean-only V1 image corpus. Twelve checkpoint heads; nine currently served, with TInv, LQT, and PRWP suppressed reversibly |
 | `efficientnetv2_s_nat768` | baselines_v2 | 768×1024 | `tensor` | round-3 **plain baseline** — the unmodified backbone at the sheet's native aspect. Val macro-AUPRC 0.9501 |
 | `efficientnetv2_s_cbam_nat768` | hybrids_v2 | 768×1024 | `tensor` | same backbone and geometry, plus CBAM (0.9571) |
 | `resnet50_cbam_nat768` | hybrids_v2 | 768×1024 | `tensor` | same protocol, geometry and attention block, other backbone (0.9570) |
@@ -238,17 +356,17 @@ The active model is a **rectangle at the sheet's own aspect**, not a square: the
 768×768 geometry squeezed the time axis by 22% and spent ~27% of the vertical
 budget on blank paper.
 
-The active checkpoint has twelve logits in this immutable order: `NORM`, `AF`,
-`IAVB`, `LBBB`, `RBBB`, `PAC`, `PVC`, `LAFB`, `LAE`, `TInv`, `LQT`, `PRWP`.
-The application currently withholds `TInv`, `LQT`, and `PRWP` from scores,
-thresholds, positives, reference labels, and explanations through the model
-descriptor's `output.suppressed_labels`. The model weights and head order are
-unchanged; removing a label from that list and restarting returns it for future
-runs without retraining.
+The active checkpoint has twelve logits in this order: `NORM`, `SB`, `STACH`,
+`LBBB`, `LQT`, `AF`, `AFL`, `3AVB`, `2AVB`, `1AVB`, `STEMI`, `STE`, all served.
+`convnextv2_tiny_v1img_v1` withholds `TInv`, `LQT`, and `PRWP` from scores,
+thresholds, positives, reference labels, and explanations through its
+descriptor's `output.suppressed_labels`; the weights and head order are
+unchanged, and removing a label from that list and restarting returns it for
+future runs without retraining.
 
-This V1 run used clean synthetic ECG images rather than real phone photographs,
-so its scores remain research outputs under the same real-photo calibration
-caveat as the earlier models. The three older round-3 descriptors still share
+The clean12 runs used clean rendered ECG images rather than real phone
+photographs, so their scores remain research outputs under the same real-photo
+calibration caveat as the earlier models. The three older round-3 descriptors still share
 protocol fingerprint `36988c5e0ba5d72d` and remain available for controlled
 comparison; their documented header-redaction gap is covered in
 `models/README.md`.
@@ -444,7 +562,7 @@ responsibility; deleting the local archive does not remove those copies.
 
 ## Testing
 
-`python3 -m pytest -q --collect-only` collects **165 cases / 93 top-level test
+`python3 -m pytest -q --collect-only` collects **238 cases / 113 top-level test
 functions**:
 
 | Test file | Cases | Functions |
@@ -454,7 +572,7 @@ functions**:
 | `test_database.py` | 2 | 2 |
 | `test_detect.py` | 9 | 9 |
 | `test_explain.py` | 19 | 19 |
-| `test_guidance.py` | 108 | 37 |
+| `test_guidance.py` | 181 | 57 |
 | `test_model_descriptor.py` | 4 | 4 |
 | `test_preprocess_parity.py` | 8 | 7 |
 
@@ -478,7 +596,7 @@ in as admin; auth/logout tests use `anon_client` instead of logging it out.
 backend/   FastAPI app: api/ (routes) · services/ (ingest, detect, rectify,
            db, records, accounts, preprocess, quality, registry, runner, storage, explain) · arch/
            (vendored model architectures) · schemas/ (pydantic records)
-frontend/  Vite + React 18 + TS PWA (zero client-side image processing)
+frontend/  Vite + React 18 + TS + Tailwind CSS v4 PWA (zero client-side image processing)
 models/    descriptors + weights
 scripts/   verify_model.py · reprocess.py · export_dataset.py · import_filesystem.py · make_cert.sh
 tests/     accounts · database/import · preprocess parity (★) · detection
@@ -508,5 +626,3 @@ tests/     accounts · database/import · preprocess parity (★) · detection
   its rule set is reviewed and added.
 - Grad-CAM runs synchronously in the request — there is no job queue — but it
   is one forward plus a partial backward per label, so seconds, not minutes.
-# cardiosentry-application
-# cardiosentry-application

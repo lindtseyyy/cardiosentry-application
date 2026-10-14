@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { api, isApiError, friendlyMessage } from "../api/client";
 import PasswordInput from "../components/PasswordInput";
+import { authActions, authPanel, authSubmit, btn, field, fieldError, fieldHint, fieldLabel, msg, panelTitle } from "../ui";
 
 interface AccountScreenProps {
   username: string;
@@ -111,22 +112,22 @@ export default function AccountScreen({
   };
 
   return (
-    <div className="auth-panel panel">
-      <h2>Settings</h2>
+    <div className={authPanel}>
+      <h2 className={`${panelTitle} mt-0`}>Settings</h2>
       {errors.form && (
-        <div className="msg error" role="alert">
+        <div className={msg.error} role="alert">
           {errors.form}
         </div>
       )}
       {successMsg && (
-        <div className="msg info" aria-live="polite">
+        <div className={msg.info} aria-live="polite">
           {successMsg}
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="vstack mt" noValidate>
-        <div className="field">
-          <label htmlFor="account-username">Username</label>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-3 mt-3" noValidate>
+        <div className={field}>
+          <label className={fieldLabel} htmlFor="account-username">Username</label>
           <input
             id="account-username"
             type="text"
@@ -144,15 +145,15 @@ export default function AccountScreen({
             disabled={pending}
           />
           {errors.username && (
-            <div id="account-username-error" className="field-error">
+            <div id="account-username-error" className={fieldError}>
               {errors.username}
             </div>
           )}
         </div>
 
-        <div className="field mt">
-          <label htmlFor="account-new-password">New password</label>
-          <div className="hint" id="account-new-password-hint">Leave blank to keep your current password</div>
+        <div className={`${field} mt-3`}>
+          <label className={fieldLabel} htmlFor="account-new-password">New password</label>
+          <div className={fieldHint} id="account-new-password-hint">Leave blank to keep your current password</div>
           <PasswordInput
             id="account-new-password"
             value={newPassword}
@@ -168,15 +169,15 @@ export default function AccountScreen({
             disabled={pending}
           />
           {errors.newPassword && (
-            <div id="account-new-password-error" className="field-error">
+            <div id="account-new-password-error" className={fieldError}>
               {errors.newPassword}
             </div>
           )}
         </div>
 
         {newPassword && (
-          <div className="field mt">
-            <label htmlFor="account-confirm">Confirm new password</label>
+          <div className={`${field} mt-3`}>
+            <label className={fieldLabel} htmlFor="account-confirm">Confirm new password</label>
             <PasswordInput
               id="account-confirm"
               value={confirmPassword}
@@ -191,15 +192,15 @@ export default function AccountScreen({
               disabled={pending}
             />
             {errors.confirmPassword && (
-              <div id="account-confirm-error" className="field-error">
+              <div id="account-confirm-error" className={fieldError}>
                 {errors.confirmPassword}
               </div>
             )}
           </div>
         )}
         
-        <div className="field mt">
-          <label htmlFor="account-current-password">Current password</label>
+        <div className={`${field} mt-3`}>
+          <label className={fieldLabel} htmlFor="account-current-password">Current password</label>
           <PasswordInput
             id="account-current-password"
             value={currentPassword}
@@ -215,24 +216,24 @@ export default function AccountScreen({
             disabled={pending}
           />
           {errors.currentPassword && (
-            <div id="account-current-password-error" className="field-error">
+            <div id="account-current-password-error" className={fieldError}>
               {errors.currentPassword}
             </div>
           )}
         </div>
 
-        <div className="auth-actions mt-lg">
-          <button type="submit" className="primary auth-submit-btn" disabled={pending}>
+        <div className={`${authActions} mt-5`}>
+          <button type="submit" className={`${btn.primary} ${authSubmit}`} disabled={pending}>
             Save changes
           </button>
         </div>
       </form>
 
       {onSignOut ? (
-        <div className="account-signout-block">
+        <div className="flex justify-center w-full pt-5 mt-6 border-t border-line">
           <button
             type="button"
-            className="danger auth-submit-btn account-signout-btn"
+            className={`${btn.danger} ${authSubmit}`}
             onClick={onSignOut}
           >
             Sign out

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, friendlyMessage, isApiError } from "../api/client";
 import type { AnnotationRecord, CaptureRecord } from "../api/types";
+import { btn, field, fieldLabel, msg, panel, panelTitle } from "../ui";
 
 const TRUTH_SOURCES = [
   "cardiologist report",
@@ -82,14 +83,15 @@ export default function ReferenceLabels({
   }
 
   return (
-    <div className="panel">
-      <h2>Reference labels</h2>
+    <div className={`${panel} mb-4.5`}>
+      <h2 className={`${panelTitle} mx-0 mt-0`}>Reference labels</h2>
 
-      <div className="checks-grid">
+      <div className="grid grid-cols-[1fr_1fr] gap-2 max-phone:grid-cols-[1fr]">
         {labels.map((label) => (
-          <label key={label} className="check">
+          <label key={label} className="flex items-center gap-2.5 bg-panel-2 border border-line rounded-control px-3 py-2.5 min-h-11">
             <input
               type="checkbox"
+              className="size-5 accent-accent m-[3px_3px_3px_4px]"
               checked={!!refLabels[label]}
               onChange={(e) => toggleLabel(label, e.target.checked)}
             />
@@ -98,9 +100,9 @@ export default function ReferenceLabels({
         ))}
       </div>
 
-      <div className="vstack mt">
-        <div className="field">
-          <label htmlFor="truth-source">Truth source</label>
+      <div className="flex flex-col gap-3 mt-3">
+        <div className={field}>
+          <label htmlFor="truth-source" className={fieldLabel}>Truth source</label>
           <select
             id="truth-source"
             value={truthSource}
@@ -115,8 +117,8 @@ export default function ReferenceLabels({
           </select>
         </div>
 
-        <div className="field">
-          <label htmlFor="ref-notes">Notes</label>
+        <div className={field}>
+          <label htmlFor="ref-notes" className={fieldLabel}>Notes</label>
           <textarea
             id="ref-notes"
             value={notes}
@@ -125,29 +127,30 @@ export default function ReferenceLabels({
           />
         </div>
 
-        <div className="toggle-row">
-          <div className="labels">
-            <span className="t">Labels entered before prediction</span>
+        <div className="flex items-center justify-between gap-3 bg-panel-2 border border-line rounded-control px-3.5 py-3">
+          <div className="flex flex-col">
+            <span className="font-semibold">Labels entered before prediction</span>
           </div>
-          <span className="switch">
+          <span className="relative w-13 h-7.5 flex-none">
             <input
               type="checkbox"
+              className="peer opacity-0 size-0 m-[3px_3px_3px_4px]"
               id="before-prediction"
               checked={beforePrediction}
               onChange={(e) => setBeforePrediction(e.target.checked)}
             />
-            <span className="track" />
+            <span className="absolute inset-0 bg-panel-3 border border-line rounded-full [transition:background_0.15s] before:content-[''] before:absolute before:size-5.5 before:left-0.75 before:top-0.75 before:bg-ink-muted before:rounded-full before:[transition:translate_0.15s,background_0.15s] peer-checked:bg-accent-strong peer-checked:border-accent-strong peer-checked:before:translate-x-5.5 peer-checked:before:bg-white" />
           </span>
         </div>
       </div>
 
-      {error ? <div className="msg error mt">{error}</div> : null}
+      {error ? <div className={`${msg.error} mt-3`}>{error}</div> : null}
       {saved ? (
-        <div className="msg info mt">Reference labels saved.</div>
+        <div className={`${msg.info} mt-3`}>Reference labels saved.</div>
       ) : null}
 
-      <div className="mt">
-        <button type="button" className="primary" onClick={save} disabled={saving}>
+      <div className="mt-3">
+        <button type="button" className={btn.primary} onClick={save} disabled={saving}>
           {saving ? "Saving…" : "Save labels"}
         </button>
       </div>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, friendlyMessage, isApiError } from "../api/client";
 import type { PredictionResponse, RectifyResponse } from "../api/types";
+import { btn, loadingScreen, msg, panel, sectionTitle, spinnerInline, spinnerLarge } from "../ui";
 
 export interface PreviewScreenProps {
   rectify: RectifyResponse;
@@ -41,22 +42,22 @@ export default function PreviewScreen({
 
   if (!showPreview) {
     return (
-      <div className="loading-block screen-center" aria-live="polite">
+      <div className={loadingScreen} aria-live="polite">
         {error ? (
           <>
-            <div className="msg error">{error}</div>
-            <div className="hstack mt" style={{ justifyContent: "center" }}>
-              <button type="button" className="primary" onClick={() => void run()}>
+            <div className={msg.error}>{error}</div>
+            <div className="flex items-center justify-center gap-3 flex-wrap mt-3">
+              <button type="button" className={btn.primary} onClick={() => void run()}>
                 Try again
               </button>
-              <button type="button" className="ghost" onClick={onBack}>
+              <button type="button" className={btn.ghost} onClick={onBack}>
                 Re-adjust corners
               </button>
             </div>
           </>
         ) : (
           <>
-            <span className="spinner" />
+            <span className={spinnerLarge} />
             {running ? "Classifying ECG findings…" : "Preparing ECG analysis…"}
           </>
         )}
@@ -66,38 +67,38 @@ export default function PreviewScreen({
 
   return (
     <div>
-      <h1 className="section-title">Preview</h1>
+      <h1 className={`${sectionTitle} mt-0 mx-0 mb-1`}>Preview</h1>
 
-      <div className="preview-grid">
-        <div className="preview-cell">
-          <img src={rectify.files.corrected} alt="Corrected sheet" />
-          <div className="cell-cap">Corrected</div>
+      <div className="grid grid-cols-2 gap-3.5 max-narrow:grid-cols-1">
+        <div className="border border-line rounded-card overflow-hidden bg-black">
+          <img className="w-full block" src={rectify.files.corrected} alt="Corrected sheet" />
+          <div className="py-2 px-3 text-[0.8rem] text-ink-muted bg-panel border-t border-line">Corrected</div>
         </div>
-        <div className="preview-cell">
-          <img src={rectify.files.model_input} alt="Model input" />
-          <div className="cell-cap exact">Model input</div>
+        <div className="border border-line rounded-card overflow-hidden bg-black">
+          <img className="w-full block" src={rectify.files.model_input} alt="Model input" />
+          <div className="py-2 px-3 text-[0.8rem] text-accent font-semibold bg-panel border-t border-line">Model input</div>
         </div>
       </div>
 
-      <div className="panel mt">
-        {error ? <div className="msg error">{error}</div> : null}
+      <div className={`${panel} mb-4.5 mt-3`}>
+        {error ? <div className={msg.error}>{error}</div> : null}
 
-        <div className="hstack mt">
+        <div className="flex items-center gap-3 flex-wrap mt-3">
           <button
             type="button"
-            className="primary"
+            className={btn.primary}
             onClick={() => void run()}
             disabled={running}
           >
             {running ? (
               <>
-                <span className="spinner" /> Running model…
+                <span className={spinnerInline} /> Running model…
               </>
             ) : (
               "Run model"
             )}
           </button>
-          <button type="button" className="ghost" onClick={onBack} disabled={running}>
+          <button type="button" className={btn.ghost} onClick={onBack} disabled={running}>
             Re-adjust corners
           </button>
         </div>

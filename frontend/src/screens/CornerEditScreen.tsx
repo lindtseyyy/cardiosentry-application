@@ -3,6 +3,7 @@ import { api, friendlyMessage, isApiError } from "../api/client";
 import type { CaptureUploadResponse, Point, RectifyResponse } from "../api/types";
 import { useApp } from "../AppContext";
 import QuadEditor from "../components/QuadEditor";
+import { btn, msg, sectionSub, sectionTitle, spinnerInline } from "../ui";
 
 const FULL_FRAME: Point[] = [
   [0.05, 0.05],
@@ -56,17 +57,17 @@ export default function CornerEditScreen({
 
   return (
     <div>
-      <h1 className="section-title">Adjust corners</h1>
-      <p className="section-sub">
+      <h1 className={`${sectionTitle} mt-0 mx-0 mb-1`}>Adjust corners</h1>
+      <p className={`${sectionSub} mt-0 mx-0`}>
         Drag the four numbered handles onto the paper corners.
       </p>
 
       {!det.success ? (
-        <div className="msg warn">
+        <div className={msg.warn}>
           Couldn't find the paper edges — drag the corners yourself.
         </div>
       ) : det.confidence > 0 && det.confidence < confWarn ? (
-        <div className="msg warn">
+        <div className={msg.warn}>
           Automatic detection was unsure — check the corners.
         </div>
       ) : null}
@@ -80,21 +81,21 @@ export default function CornerEditScreen({
         }}
       />
 
-      {error ? <div className="msg error mt">{error}</div> : null}
+      {error ? <div className={`${msg.error} mt-3`}>{error}</div> : null}
 
-      <div className="action-row mt">
-        <button type="button" className="ghost" onClick={onBack} disabled={rectifying}>
+      <div className="flex justify-end gap-3 mt-3">
+        <button type="button" className={btn.ghost} onClick={onBack} disabled={rectifying}>
           Back
         </button>
         <button
           type="button"
-          className="primary"
+          className={btn.primary}
           onClick={confirm}
           disabled={rectifying}
         >
           {rectifying ? (
             <>
-              <span className="spinner" /> Processing…
+              <span className={spinnerInline} /> Processing…
             </>
           ) : (
             "Confirm corners"

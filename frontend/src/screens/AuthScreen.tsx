@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { api, isApiError, friendlyMessage } from "../api/client";
 import PasswordInput from "../components/PasswordInput";
 import type { AuthRequest } from "../api/types";
+import { authActions, authPanel, authSubmit, btn, field, fieldError, fieldLabel, msg, panelTitle } from "../ui";
 interface AuthScreenProps {
   onAuthenticated: (username: string, isAdmin?: boolean) => void;
 }
@@ -90,17 +91,17 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
   };
 
   return (
-    <div className="auth-panel panel">
-      <h2>{mode === "login" ? "Sign in" : "Create account"}</h2>
+    <div className={authPanel}>
+      <h2 className={`${panelTitle} mt-0`}>{mode === "login" ? "Sign in" : "Create account"}</h2>
       {errors.form && (
-        <div className="msg error" role="alert">
+        <div className={msg.error} role="alert">
           {errors.form}
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="vstack mt" noValidate>
-        <div className="field">
-          <label htmlFor="auth-username">Username</label>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-3 mt-3" noValidate>
+        <div className={field}>
+          <label className={fieldLabel} htmlFor="auth-username">Username</label>
           <input
             id="auth-username"
             type="text"
@@ -118,14 +119,14 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
             disabled={pending}
           />
           {errors.username && (
-            <div id="auth-username-error" className="field-error">
+            <div id="auth-username-error" className={fieldError}>
               {errors.username}
             </div>
           )}
         </div>
 
-        <div className="field mt">
-          <label htmlFor="auth-password">Password</label>
+        <div className={`${field} mt-3`}>
+          <label className={fieldLabel} htmlFor="auth-password">Password</label>
           <PasswordInput
             id="auth-password"
             value={password}
@@ -141,15 +142,15 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
             disabled={pending}
           />
           {errors.password && (
-            <div id="auth-password-error" className="field-error">
+            <div id="auth-password-error" className={fieldError}>
               {errors.password}
             </div>
           )}
         </div>
 
         {mode === "register" && (
-          <div className="field mt">
-            <label htmlFor="auth-confirm">Confirm password</label>
+          <div className={`${field} mt-3`}>
+            <label className={fieldLabel} htmlFor="auth-confirm">Confirm password</label>
             <PasswordInput
               id="auth-confirm"
               value={confirmPassword}
@@ -164,24 +165,24 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               disabled={pending}
             />
             {errors.confirmPassword && (
-              <div id="auth-confirm-error" className="field-error">
+              <div id="auth-confirm-error" className={fieldError}>
                 {errors.confirmPassword}
               </div>
             )}
           </div>
         )}
 
-        <div className="auth-actions mt-lg">
-          <button type="submit" className="primary auth-submit-btn" disabled={pending}>
+        <div className={`${authActions} mt-5`}>
+          <button type="submit" className={`${btn.primary} ${authSubmit}`} disabled={pending}>
             {mode === "login" ? "Sign in" : "Create account"}
           </button>
         </div>
       </form>
 
-      <div className="center mt-lg">
+      <div className="text-center mt-5">
         <button
           type="button"
-          className="link-button"
+          className={btn.link}
           onClick={() => {
             setMode(mode === "login" ? "register" : "login");
             setErrors({});

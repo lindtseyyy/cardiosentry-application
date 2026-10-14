@@ -6,6 +6,10 @@ import ExplainPanel from "../components/ExplainPanel";
 import GuidancePanel from "../components/GuidancePanel";
 import PredictionLabels from "../components/PredictionLabels";
 import { formatDateTime } from "../utils/date";
+import { btn, loadingBlock, msg, sectionTitle } from "../ui";
+
+const printMetaLabel = "text-[7.5pt] font-bold tracking-[0.06em] uppercase text-[#555]";
+const printMetaValue = "mt-px mx-0 mb-0 text-[9.5pt] [overflow-wrap:anywhere]";
 
 export interface ResultScreenProps {
   prediction: PredictionResponse;
@@ -84,61 +88,61 @@ export default function ResultScreen({ prediction }: ResultScreenProps) {
     : null;
 
   return (
-    <div ref={rootRef} className="result-screen">
-      <div className="spread page-heading">
-        <h1 className="section-title">Result</h1>
+    <div ref={rootRef}>
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-4.5 print:hidden">
+        <h1 className={`${sectionTitle} mt-0 mx-0 mb-1`}>Result</h1>
         {!recordLoading && !blind ? (
-          <button type="button" className="small matte-blue no-print" onClick={() => window.print()}>
+          <button type="button" className={`${btn.small} ${btn.matteBlue} print:hidden`} onClick={() => window.print()}>
             Print Report
           </button>
         ) : null}
       </div>
 
       {record && !blind ? (
-        <section className="print-only print-report-head" aria-hidden="true">
-          <div className="print-report-title">
-            <img src="/favicon.png" alt="" />
+        <section className="hidden print:block print:mb-3.5" aria-hidden="true">
+          <div className="flex items-center gap-2.5 pb-2 border-b-2 border-[#111]">
+            <img className="size-6.5" src="/favicon.png" alt="" />
             <div>
-              <strong>CardioSentry ECG screening report</strong>
-              <span>Screening support only — not a diagnosis</span>
+              <strong className="block text-[15pt]">CardioSentry ECG screening report</strong>
+              <span className="text-[9pt] text-[#444]">Screening support only — not a diagnosis</span>
             </div>
           </div>
-          <dl className="print-meta">
-            <div>
-              <dt>ECG captured</dt>
-              <dd>{formatDateTime(record.created_utc)}</dd>
+          <dl className="grid grid-cols-3 gap-x-4 gap-y-1.5 mt-2.5 mx-0 mb-3">
+            <div className="min-w-0">
+              <dt className={printMetaLabel}>ECG captured</dt>
+              <dd className={printMetaValue}>{formatDateTime(record.created_utc)}</dd>
             </div>
-            <div>
-              <dt>Analysed</dt>
-              <dd>{formatDateTime(prediction.created_utc)}</dd>
+            <div className="min-w-0">
+              <dt className={printMetaLabel}>Analysed</dt>
+              <dd className={printMetaValue}>{formatDateTime(prediction.created_utc)}</dd>
             </div>
-            <div>
-              <dt>Printed</dt>
-              <dd>{formatDateTime(new Date().toISOString())}</dd>
+            <div className="min-w-0">
+              <dt className={printMetaLabel}>Printed</dt>
+              <dd className={printMetaValue}>{formatDateTime(new Date().toISOString())}</dd>
             </div>
             {record.session?.sheet_id ? (
-              <div>
-                <dt>Sheet ID</dt>
-                <dd>{record.session.sheet_id}</dd>
+              <div className="min-w-0">
+                <dt className={printMetaLabel}>Sheet ID</dt>
+                <dd className={printMetaValue}>{record.session.sheet_id}</dd>
               </div>
             ) : null}
-            <div>
-              <dt>Capture</dt>
-              <dd className="mono">{captureId}</dd>
+            <div className="min-w-0">
+              <dt className={printMetaLabel}>Capture</dt>
+              <dd className="mt-px mx-0 mb-0 text-[8.5pt] [overflow-wrap:anywhere] tabular-nums">{captureId}</dd>
             </div>
           </dl>
           {sheetImage ? (
-            <figure className="print-sheet">
-              <img src={sheetImage} alt="ECG sheet analysed" />
+            <figure className="m-0 break-inside-avoid">
+              <img className="block w-full max-h-[95mm] object-contain border border-[#bbb]" src={sheetImage} alt="ECG sheet analysed" />
             </figure>
           ) : null}
         </section>
       ) : null}
 
-      {recordError ? <div className="msg warn">{recordError}</div> : null}
+      {recordError ? <div className={msg.warn}>{recordError}</div> : null}
 
       {recordLoading ? (
-        <div className="loading-block">Loading result…</div>
+        <div className={loadingBlock}>Loading result…</div>
       ) : (
         <>
           <PredictionLabels
@@ -165,7 +169,7 @@ export default function ResultScreen({ prediction }: ResultScreenProps) {
       )}
 
       {record && !blind ? (
-        <footer className="print-only print-footer">
+        <footer className="hidden print:block print:mt-4 print:pt-2 print:border-t print:border-[#999] print:text-[8pt] print:text-[#444]">
           {config?.guidance.disclaimer ??
             "Screening and decision support only. This experimental image-model output is not a diagnosis and does not replace a clinician-interpreted ECG."}
         </footer>

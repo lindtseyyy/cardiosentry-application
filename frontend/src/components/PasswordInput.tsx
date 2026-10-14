@@ -26,9 +26,10 @@ export default function PasswordInput({
   disabled,
 }: PasswordInputProps) {
   return (
-    <div className="password-input">
+    <div className="relative flex">
       <input
         id={id}
+        className="pr-11"
         type={visible ? "text" : "password"}
         value={value}
         onChange={onChange}
@@ -41,7 +42,7 @@ export default function PasswordInput({
       {onToggleVisible && (
         <button
           type="button"
-          className="password-toggle"
+          className="absolute inset-y-0 right-0 w-11 p-0 bg-transparent border-0 text-ink-muted flex items-center justify-center hover:text-ink active:transform-none"
           aria-label={visible ? "Hide password" : "Show password"}
           aria-pressed={visible}
           onClick={onToggleVisible}

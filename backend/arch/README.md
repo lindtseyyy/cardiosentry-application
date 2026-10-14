@@ -10,6 +10,7 @@ subpackages are pinned copies of that code.
 | Package | Copied from | Serves |
 |---|---|---|
 | `convnext_v1_clean12/` | `build_model` in `prototype-code/clean_convnext_codes/convnext_v1_base_clean12_v1/make_notebook.py` | HEEDB clean12 `convnext_base.fb_in22k_ft_in1k_384`: bare timm module, 12 logits, `drop_path_rate=0.2`, `head_init_scale=0.001`, plain-tensor forward. The checkpoint is the full training `best.pt`; the runner serves its `selected_weight_source` (EMA) |
+| `convnext_v1_rfpn_clean12/` | `fusion_necks.py` verbatim + `build_model` in `prototype-code/clean_convnext_codes/convnext_v1_base_msff_clean12_colab_v1/make_notebook.py` (`CS_FUSION=rfpn`) | HEEDB clean12 `convnext_base.fb_in22k_ft_in1k_384` (12 logits, `drop_path_rate=0.2`, `head_init_scale=0.001`) wrapped in `ConvNeXtMultiScaleFusion`: FPN neck over timm stages.1-3 at 256 channels, residual head (ConvNeXt logits + LayerNorm/Linear over the pooled neck). Keys `backbone.*`, `neck.*`, `fuse_norm.*`, `fuse_fc.*`; plain-tensor forward. The checkpoint is the run's `inference.pt` (selected EMA weights under `model`) |
 | `convnextv2_v1img/` | factory in `prototype-code/convnextv2_tiny_v1img_v1/make_notebook.py` | V1 clean-image `convnextv2_tiny.fcmae_ft_in22k_in1k_384`: bare timm module, 12 logits, `drop_path_rate=0.2`, plain-tensor forward |
 | `hybrids_v2/` | `prototype-code/cardiosentry_hybrids_v2/{config,dimensions,hybrids,models}.py` | round-3 geometry-study checkpoints (`resnet50_cbam`, `efficientnetv2_s_cbam`, …), the ones trained on a RECTANGLE. Forward signature: **plain tensor**. `REGISTRY` and `build()` live in `models.py` |
 | `hybrids_v1/` | `prototype-code/cardiosentry_hybrids_v1/{config,hybrids}.py` | round-2 hybrid checkpoints (`resnet50_hires`, `resnet50_dual`, …). Forward signature: **dict** `{768: tensor}` |
@@ -19,7 +20,8 @@ subpackages are pinned copies of that code.
 Source repository: `CardioSentry` (commit `9c19a22`, first commit).
 `hybrids_v1/` and `runs_v1/` vendored on 2026-08-23, `hybrids_v2/` on
 2026-08-27, `baselines_v2/` on 2026-08-29, `convnextv2_v1img/` on
-2026-09-19, and `convnext_v1_clean12/` on 2026-10-03. `baselines_v2/config.py` and
+2026-09-19, `convnext_v1_clean12/` on 2026-10-03, and `convnext_v1_rfpn_clean12/`
+on 2026-10-09. `baselines_v2/config.py` and
 `baselines_v2/dimensions.py` are byte-identical to the `hybrids_v2/` copies —
 the two research packages share those files verbatim — and are duplicated
 rather than cross-imported so each package stays pinned on its own: a future
@@ -54,3 +56,11 @@ notebook rather than a Python architecture package. `convnextv2_v1img/models.py`
 extracts its `build_model` call verbatim in behavior: the same timm tag,
 `num_classes=12`, and `drop_path_rate=0.2`. It deliberately omits training-only
 optimizer, loss, data-loader, and S3 code.
+
+**4. ConvNeXt-V1 RFPN factory extraction.** `convnext_v1_rfpn_clean12/
+fusion_necks.py` is the run's file byte for byte (sha256 `7570a280…`, identical
+in the A100, L4 and EC2 folders; the notebook inlines it). `models.py` extracts
+`build_model` with the run's `CS_FUSION=rfpn` resolution fixed: the same timm
+tag and arguments, then `ConvNeXtMultiScaleFusion(backbone, "fpn", "residual",
+12, channels=256, bifpn_repeats=2, head_init_scale=0.001)`. Environment
+variables are not read.

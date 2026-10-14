@@ -3,6 +3,7 @@ import { friendlyMessage, isApiError, uploadCapture } from "../api/client";
 import type { CaptureUploadResponse } from "../api/types";
 import { useApp } from "../AppContext";
 import { PrivacySummary } from "../components/PrivacyNotice";
+import { btn, msg, panel, panelTitle, spinnerInline } from "../ui";
 
 export interface CaptureScreenProps {
   onUploaded: (resp: CaptureUploadResponse) => void;
@@ -34,7 +35,7 @@ function writeAck(version: string) {
 function CameraIcon() {
   return (
     <svg
-      className="btn-icon"
+      className="size-[22px] flex-none"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -52,7 +53,7 @@ function CameraIcon() {
 function ImageIcon() {
   return (
     <svg
-      className="btn-icon"
+      className="size-[22px] flex-none"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -114,26 +115,27 @@ export default function CaptureScreen({ onUploaded, onOpenPrivacy }: CaptureScre
   }
 
   return (
-    <div className="capture-screen">
+    <div className="flex-1 flex flex-col justify-center pb-6">
 
       {/* No status panel: only problems are worth the space. */}
-      {unreachable ? <div className="msg error">Backend unreachable.</div> : null}
+      {unreachable ? <div className={msg.error}>Backend unreachable.</div> : null}
       {health && health.free_space_warn ? (
-        <div className="msg warn">
+        <div className={msg.warn}>
           Low disk space ({health.free_space_gb} GB free)
         </div>
       ) : null}
 
       {config && !acked ? (
-        <section className="panel privacy-gate" aria-labelledby="privacy-gate-title">
-          <h2 id="privacy-gate-title">Data privacy</h2>
+        <section className={`${panel} mb-4.5 grid gap-3 justify-items-start`} aria-labelledby="privacy-gate-title">
+          <h2 className={`${panelTitle} mt-0 mx-0`} id="privacy-gate-title">Data privacy</h2>
           <PrivacySummary />
-          <button type="button" className="link-button" onClick={onOpenPrivacy}>
+          <button type="button" className={btn.link} onClick={onOpenPrivacy}>
             Read the full Data Privacy Notice
           </button>
-          <label className="privacy-consent">
+          <label className="flex items-start gap-2.5 bg-panel-2 border border-line rounded-control p-3 text-[0.9rem] cursor-pointer">
             <input
               type="checkbox"
+              className="flex-none size-5 mt-0.25 mx-0 mb-0 accent-accent"
               checked={consentChecked}
               onChange={(e) => setConsentChecked(e.target.checked)}
             />
@@ -145,7 +147,7 @@ export default function CaptureScreen({ onUploaded, onOpenPrivacy }: CaptureScre
           </label>
           <button
             type="button"
-            className="primary"
+            className={`${btn.primary} min-h-12 min-w-35`}
             disabled={!consentChecked}
             onClick={acceptNotice}
           >
@@ -155,10 +157,10 @@ export default function CaptureScreen({ onUploaded, onOpenPrivacy }: CaptureScre
       ) : null}
 
       {acked ? (
-        <div className="big-actions">
+        <div className="grid grid-cols-2 gap-3.5 max-phone:grid-cols-1">
           <button
             type="button"
-            className="primary"
+            className="inline-flex items-center justify-center gap-2.5 min-h-16 text-[1.05rem] font-semibold border-line-strong rounded-card bg-accent-strong text-white"
             disabled={uploading}
             onClick={() => cameraRef.current?.click()}
           >
@@ -167,6 +169,7 @@ export default function CaptureScreen({ onUploaded, onOpenPrivacy }: CaptureScre
           </button>
           <button
             type="button"
+            className="inline-flex items-center justify-center gap-2.5 min-h-16 text-[1.05rem] font-semibold border-line-strong rounded-card bg-panel-2"
             disabled={uploading}
             onClick={() => galleryRef.current?.click()}
           >
@@ -194,18 +197,18 @@ export default function CaptureScreen({ onUploaded, onOpenPrivacy }: CaptureScre
       />
 
       {uploading ? (
-        <div className="panel mt">
-          <div className="hstack">
-            <span className="spinner" />
+        <div className={`${panel} mb-4.5 mt-3`}>
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className={spinnerInline} />
             <span>Uploading… {Math.round(progress * 100)}%</span>
           </div>
-          <div className="progress">
-            <div style={{ width: `${progress * 100}%` }} />
+          <div className="h-2.5 rounded-full bg-track overflow-hidden my-2.5">
+            <div className="h-full bg-accent [transition:width_0.15s_ease]" style={{ width: `${progress * 100}%` }} />
           </div>
         </div>
       ) : null}
 
-      {error ? <div className="msg error mt">{error}</div> : null}
+      {error ? <div className={`${msg.error} mt-3`}>{error}</div> : null}
 
     </div>
   );

@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-Last verified against the tree: **2026-10-08**.
+Last verified against the tree: **2026-10-10**.
 
 ## Project Overview
 
@@ -57,7 +57,7 @@ flowchart LR
 | `backend/schemas/` | Pydantic v2 request/response and stored record shapes; `model_descriptor.py` |
 | `backend/arch/<pkg>/` | Vendored training-time `nn.Module` code, byte-identical except for 3 documented deviations |
 | `models/` | `<id>.yaml` descriptors, the `active.yaml` symlink, `weights/` (gitignored) |
-| `frontend/src/` | `App.tsx` (hash router), `AppContext.ts`, `screens/`, `components/`, `api/{client,types}.ts`, `styles.css` |
+| `frontend/src/` | `App.tsx` (hash router), `AppContext.ts`, `screens/`, `components/`, `api/{client,types}.ts`, `styles.css` (Tailwind entry), `ui.ts` (shared utility strings) |
 | `scripts/` | `verify_model.py`, `reprocess.py`, `export_dataset.py`, `import_filesystem.py`, `make_cert.sh` |
 | `tests/` | pytest suite, `make_fixtures.py`, checked-in `fixtures/` |
 | `captures/` | Runtime PHI images/binary arrays only. Gitignored. Credential/session hashes live in PostgreSQL; legacy JSON is archived outside the repo. Never commit it or write test output there |
@@ -122,7 +122,7 @@ There is **no lint or format tooling**: no ruff, black, mypy, ESLint or Prettier
 - **JSONB**: PostgreSQL rejects `\u0000`; `RecordStore` strips NULs recursively from keys and string values (including padded phone EXIF) and rejects NaN/Infinity with `allow_nan=False`. Do not bypass that boundary.
 - **Migrations**: append a new version to `db.MIGRATIONS`; never edit migration v1 or another applied version. `schema_migrations` prevents old versions from running again.
 - **Geometry**: `input_size` and `views` are `[height, width]` (torch order), not PIL `(w, h)`. If you transpose them, the model still scores, but the results are silently wrong.
-- **Frontend**: React 18 + TS strict. The hash router in `App.tsx` replaces react-router. Shared state uses `AppContext` + hooks (no Redux/Zustand). Every call goes through the `api` object in `api/client.ts`; uploads use XHR to get progress. Styling is vanilla CSS variables in `styles.css`. The only typeface is Roboto, self-hosted by the npm package `@fontsource/roboto` (imported in `main.tsx`; the app must make no outbound calls, so never use a CDN font). The layout is a flex column: `.app-main` grows so `.app-footer` (Data Privacy Notice link) rests at the bottom of the viewport. The PWA comes from `vite-plugin-pwa`.
+- **Frontend**: React 18 + TS strict. The hash router in `App.tsx` replaces react-router. Shared state uses `AppContext` + hooks (no Redux/Zustand). Every call goes through the `api` object in `api/client.ts`; uploads use XHR to get progress. Styling is Tailwind CSS v4 via `@tailwindcss/vite`: `src/styles.css` is the Tailwind entry with `@theme` tokens, base element styles and global print rules; utilities live inline in TSX, and shared class strings in `src/ui.ts` are complete literals (no clsx or fragment-built class names). Custom breakpoints are `tiny`, `phone`, `compact`, `nav`, `narrow`, `md` and `wide`; use these rather than default breakpoint names. The only typeface is Roboto, self-hosted by the npm package `@fontsource/roboto` (imported in `main.tsx`; the app must make no outbound calls, so never use a CDN font). The layout is a flex column: `<main>` grows (`flex-[1_0_auto]`) so the footer (Data Privacy Notice link) rests at the bottom of the viewport. The PWA comes from `vite-plugin-pwa`.
 
 ### Change-together table
 
@@ -134,7 +134,7 @@ There is **no lint or format tooling**: no ruff, black, mypy, ESLint or Prettier
 | Input chain | `services/preprocess.py` + `tests/test_preprocess_parity.py` (1e-6 parity vs training) |
 | Stage output file | `services/storage.py` `FILE_WHITELIST` + `api/captures.py` + frontend |
 | Explain | `services/explain.py` + `api/explain.py` + `schemas/explain.py` + `tests/test_explain.py` |
-| Guidance rules | `services/guidance.py` (`RULE_SETS`, `FINDING_RULES`, `COMBINATIONS`; 911, pediatric floor) + `schemas/guidance.py` (`cautions`, `combination_notes`) + `frontend/src/api/types.ts` + `frontend/src/components/GuidancePanel.tsx` + `frontend/src/styles.css` (visible/printable cautions and clinician notes) + `docs/clinical-guidance.md` + `tests/test_guidance.py` |
+| Guidance rules | `services/guidance.py` (`RULE_SETS`, `FINDING_RULES`, `COMBINATIONS`; 911/CPR/AED, pediatric/pacemaker floors, known-history baselines, benign pair) + `schemas/guidance.py` (`cautions`, `combination_notes`, `priority_question`, `scope_note`) + `frontend/src/api/types.ts` + `frontend/src/components/GuidancePanel.tsx` utilities (including `print:` variants: screen-only priority gate, printable result/cautions/clinician notes/scope) / `frontend/src/styles.css` global print rules + `docs/clinical-guidance.md` + `tests/test_guidance.py` |
 | Descriptor field | `schemas/model_descriptor.py` + affected `models/*.yaml` + `models/README.md` |
 | Setting | `settings.py` + `.env.example` |
 | Backend data handling | `frontend/src/components/PrivacyNotice.tsx` + bump `PRIVACY_NOTICE_VERSION` in `api/config.py` |
@@ -150,18 +150,18 @@ There is **no lint or format tooling**: no ruff, black, mypy, ESLint or Prettier
 - `backend/api/auth.py`: five auth routes, `current_account`, `owned_capture`, exact public-path allowlist.
 - `backend/services/runner.py`: builds the arch, `load_state_dict(strict=True)`, threshold source, F2/F3 call-style adapters (`tensor` | `view_dict`).
 - `backend/services/preprocess.py`: ★ the canonical training-input chain.
-- `backend/services/guidance.py`: four-tier rule tables, symptom/history escalation, conflict/caveat combinations and combination steps; Philippine emergency hotline 911; under-18 Yellow floor with the response's prominent `cautions` and visible clinician `combination_notes`. Import-time asserts require every served label to have a rule, forbid abnormal labels from ever being Green, and validate combination labels/notes. Guidance is locked to `SUPPORTED_MODEL_IDS` (`convnext_v1_base_clean12`, `convnextv2_tiny_v1img_v1`). Other models get `GUIDANCE_UNSUPPORTED_MODEL`; answers are never stored.
+- `backend/services/guidance.py`: four-tier rule tables, symptom/history escalation, conflict/caveat combinations and combination steps; Philippine emergency hotline 911 with CPR/AED wording; under-18 and pacemaker/ICD Yellow floors with prominent response `cautions`; known AF/flutter and known LBBB Yellow baselines; the SB+1AVB benign-pair exception; a backend-driven STE chest-pain `priority_question`; the every-tier `scope_note`; visible clinician `combination_notes`. Import-time asserts require every served label to have a rule, forbid abnormal labels from ever being Green, validate combination labels/notes and symptom/history enums, and check known-history rules, priority questions and benign-pair baselines. Guidance is locked to `SUPPORTED_MODEL_IDS` (`convnext_v1_base_clean12`, `convnext_v1_base_rfpn_clean12`, `convnextv2_tiny_v1img_v1`); the two clean12 models share one label set. Other models get `GUIDANCE_UNSUPPORTED_MODEL`; answers are never stored.
 - `backend/schemas/model_descriptor.py`: descriptor contract.
 - `models/active.yaml`: symlink to the served descriptor. Docs and tests must not depend on its target.
 - `pyproject.toml`: Python ≥3.12, `timm==1.0.28` pinned, `psycopg[binary,pool]>=3.2`, console scripts `cardiosentry`, `cardiosentry-verify`, `cardiosentry-reprocess`, `cardiosentry-export`, `cardiosentry-import`.
-- `frontend/vite.config.ts`: dev proxy and PWA manifest.
+- `frontend/vite.config.ts`: React and Tailwind v4 (`@tailwindcss/vite`) plugins, dev proxy and PWA manifest.
 
 ## Runtime/Tooling Preferences
 
 - Backend: system `python3` (3.12+) with torch, timm, fastapi and cv2 preinstalled. Install nothing into a venv. Use `opencv-python-headless`. The code normalizes the OpenCV 4/5 `HoughLinesP` shape.
 - Database: `psycopg[binary,pool]>=3.2` (installed: psycopg 3.3.6 / psycopg_pool 3.3.3). Install with `python3 -m pip install --user --break-system-packages 'psycopg[binary,pool]'`. PostgreSQL 16 runs in `postgres-db-cardiosentry` with volume `postgres-db-cardiosentry-data`; it must be running for the app, record scripts and DB-backed tests.
 - **Do not upgrade `timm`**. The vendored arch packages depend on its `create_model` tag semantics.
-- Frontend: Node + **npm** (`package-lock.json`). There is no other package manager.
+- Frontend: Node ≥20 (required by Tailwind v4) + **npm** (`package-lock.json`). There is no other package manager.
 - Inference is CPU by default (`CARDIOSENTRY_DEVICE=cpu`, `NUM_THREADS=4`).
 - The app must make no outbound network calls. The database host guard permits only loopback/Unix sockets; the privacy notice promises data stays on this computer. Notice version: `2026-10-08.3`.
 - Scratch scripts that import `backend.*` need `sys.path.insert(0, "<app root>")`. Keep them outside the repo.
@@ -169,7 +169,7 @@ There is **no lint or format tooling**: no ruff, black, mypy, ESLint or Prettier
 
 ## Testing & QA
 
-- pytest ≥8 + httpx `TestClient` (`pytest.ini`: `pythonpath = .`, `testpaths = tests`, `-q`). There are **165 collected cases / 93 test functions**: accounts 2 (2 functions), api_smoke 13 (13), database 2 (2), detect 9 (9), explain 19 (19), guidance 108 (37), model_descriptor 4 (4), preprocess_parity 8 (7). Cases come from `python3 -m pytest -q --collect-only`; functions are unique top-level `def test_` definitions, not parameterized cases.
+- pytest ≥8 + httpx `TestClient` (`pytest.ini`: `pythonpath = .`, `testpaths = tests`, `-q`). There are **238 collected cases / 113 test functions**: accounts 2 (2 functions), api_smoke 13 (13), database 2 (2), detect 9 (9), explain 19 (19), guidance 181 (57), model_descriptor 4 (4), preprocess_parity 8 (7). Cases come from `python3 -m pytest -q --collect-only`; functions are unique top-level `def test_` definitions, not parameterized cases.
 - `tests/conftest.py` sets env **before** importing `backend.*`, because settings is a module singleton. It sets the captures dir to `$TMPDIR/cardiosentry_test_captures`, the model pin to `CARDIOSENTRY_ACTIVE_MODEL=resnet50_cbam_nat768`, and `NUM_THREADS=2`. At import it rewrites the settings URL to `<db>_test` (`cardiosentry_test` here). The session-scoped `database_url` fixture recreates that database; `isolated_db` recreates/migrates `<db>_test_unit` (`cardiosentry_test_unit`) per test that uses it and drops it afterwards. Database creation/drop uses the `postgres` maintenance database and requires a role with that permission. Never bypass the name guards: tests must not open the real application database or use its capture directory.
 - The session-scoped `client` depends on `database_url`, loads the model once and is logged in as admin: **never log it out**. Use function-scoped `anon_client` for auth/logout tests; it shares the running app without an admin cookie or a second lifespan. Store access is `client.app.state.csd.{db,records,accounts}`.
 - **The model pin is intentional**. Assertions depend on ResNet-50 facts (`backend.layer3`, 2048 channels). Don't repoint it when the active model changes.

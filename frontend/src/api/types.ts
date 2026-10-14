@@ -364,6 +364,7 @@ export type GuidanceSymptom =
   | "chest_pain"
   | "severe_shortness_of_breath"
   | "fainting"
+  | "fainting_exertion_or_supine"
   | "palpitations"
   | "dizziness"
   | "stroke_signs";
@@ -373,7 +374,16 @@ export type GuidanceRiskFactor =
   | "diabetes"
   | "prior_stroke_tia"
   | "vascular_disease"
-  | "known_heart_disease";
+  | "known_heart_disease"
+  | "known_af_flutter"
+  | "known_lbbb"
+  | "pacemaker_icd";
+export interface GuidancePriorityQuestion {
+  symptom: GuidanceSymptom;
+  question: string;
+  reason: string;
+}
+
 /** Four tiers of increasing urgency; Green is reserved for a Normal read. */
 export type UrgencyLevel = "green" | "yellow" | "orange" | "red";
 
@@ -424,6 +434,8 @@ export interface GuidanceResponse {
     complete: boolean;
   };
   context_note: string;
+  priority_question: GuidancePriorityQuestion | null;
+  scope_note: string;
   finding_guidance: FindingGuidance[];
   combination_notes: string[];
   sources: GuidanceSource[];

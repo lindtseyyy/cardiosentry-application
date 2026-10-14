@@ -10,7 +10,7 @@ Tiers, in increasing urgency:
 
 * ``green``  — the model read the ECG as Normal and nothing reported raises
   the tier; no extra action is needed from this result alone.
-* ``yellow`` — book a routine clinician review to confirm the reading.
+* ``yellow`` — book a routine clinician review within the next few weeks.
 * ``orange`` — get a medical assessment the same day.
 * ``red``    — call emergency services now.
 
@@ -23,18 +23,22 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import get_args
 
 from backend.schemas.guidance import (
     FindingGuidance,
     GuidanceContext,
+    GuidancePriorityQuestion,
     GuidanceRequest,
     GuidanceResponse,
     GuidanceSource,
+    RiskFactor,
+    Symptom,
     UrgencyLevel,
 )
 from backend.schemas.model_descriptor import ModelDescriptor
 
-RULE_VERSION = "four-tier-2026-10-08"
+RULE_VERSION = "four-tier-2026-10-10"
 
 TIERS: tuple[UrgencyLevel, ...] = ("green", "yellow", "orange", "red")
 _RANK = {tier: rank for rank, tier in enumerate(TIERS)}
@@ -53,7 +57,8 @@ TIER_INFO: dict[str, dict[str, str]] = {
         "action": "Book a routine clinician review",
         "description": (
             "Not an emergency on the information given. Have a clinician "
-            "confirm and interpret the ECG at a routine appointment."
+            "confirm and interpret the ECG at a routine appointment within the "
+            "next few weeks."
         ),
     },
     "orange": {
@@ -78,25 +83,61 @@ TIER_INFO: dict[str, dict[str, str]] = {
 DISCLAIMER = (
     "Screening and decision support only. This experimental image-model output "
     "is not a diagnosis, does not measure clinical severity, and does not "
-    "replace a clinician-interpreted ECG or professional medical evaluation."
+    "replace a clinician-interpreted ECG or professional medical evaluation. "
+    "The urgency reflects only the model's flags and the context reported here; "
+    "it does not reflect heart rate, blood pressure, or the patient's current "
+    "condition, which the model cannot see."
+)
+
+SCOPE_NOTE = (
+    "This model reports only the specific conditions it was trained to recognise. "
+    "It cannot detect any other heart-rhythm or ECG problem, so a condition that "
+    "does not appear in this result has not been ruled out."
 )
 
 PEDIATRIC_CAUTION = (
-    "Normal heart-rate and ECG interval values are different in children, so "
-    "this app's adult thresholds for sinus bradycardia, sinus tachycardia, and "
-    "long QT do not apply. A pediatric ECG needs a clinician's interpretation; "
-    "do not use this result for triage."
+    "This tool was not validated in children. Normal heart-rate and ECG values "
+    "are different in children: the adult cut-offs of 60 and 100 beats/min for "
+    "sinus bradycardia and tachycardia and adult QT limits do not apply, and "
+    "normal pediatric ECG features can be mislabelled by an adult-trained model. "
+    "Have a pediatric clinician read the ECG; do not use this result for triage."
+)
+
+PACED_CAUTION = (
+    "A pacemaker or ICD changes the ECG: a paced rhythm often looks like left "
+    "bundle branch block, and this model was not trained to recognise paced "
+    "rhythms. Have a clinician read the ECG; do not rely on this result's "
+    "condition labels."
+)
+
+SAFETY_NET = (
+    "Symptoms override this screening result. For chest pain or pressure, "
+    "severe or worsening trouble breathing, stroke signs, fainting, or "
+    "palpitations followed by fainting, call 911. If someone collapses and is "
+    "not breathing normally, start CPR and use an AED if one is available."
+)
+
+RETAKE_STEP = (
+    "If the photo is blurred, cropped, or missing leads, retake it before "
+    "relying on the result."
 )
 
 # Symptoms that make any result Red, whatever the model flagged.
 RED_SYMPTOMS = frozenset({"chest_pain", "severe_shortness_of_breath", "stroke_signs"})
 # Symptoms that need assessment even with no abnormal flag.
 CARDIAC_SYMPTOMS = frozenset({"palpitations", "dizziness", "fainting"})
+SYNCOPE_RED_SYMPTOMS = frozenset({"fainting_exertion_or_supine"})
+PROMPT_REVIEW_SYMPTOMS = frozenset({"palpitations", "dizziness"})
+BENIGN_PAIR = frozenset({"SB", "1AVB"})
 HEART_HISTORY = frozenset({"heart_failure", "known_heart_disease"})
 AF_STROKE_RISKS = frozenset({
     "heart_failure", "hypertension", "diabetes", "prior_stroke_tia",
     "vascular_disease",
 })
+
+SYMPTOM_QUESTIONS = {
+    "chest_pain": "Does the patient have chest pain, pressure, or tightness now or recently?",
+}
 
 _SOURCES: dict[str, GuidanceSource] = {
     "aha_af_symptoms": GuidanceSource(
@@ -112,6 +153,16 @@ _SOURCES: dict[str, GuidanceSource] = {
         organization="American College of Cardiology",
         url=("https://www.acc.org/latest-in-cardiology/ten-points-to-remember/"
              "2023/11/27/19/46/2023-acc-guideline-for-af-gl-af"),
+    ),
+    "esc_af_2024": GuidanceSource(
+        id="esc_af_2024",
+        title=(
+            "2024 ESC Guidelines for the management of atrial fibrillation "
+            "developed in collaboration with the European Association for "
+            "Cardio-Thoracic Surgery (EACTS)"
+        ),
+        organization="European Society of Cardiology (European Heart Journal)",
+        url="https://academic.oup.com/eurheartj/article/45/36/3314/7738779",
     ),
     "merck_af": GuidanceSource(
         id="merck_af",
@@ -198,6 +249,12 @@ _SOURCES: dict[str, GuidanceSource] = {
         organization="American College of Cardiology / American Heart Association (Circulation)",
         url="https://www.ahajournals.org/doi/10.1161/CIR.0000000000001309",
     ),
+    "esc_acs_2023": GuidanceSource(
+        id="esc_acs_2023",
+        title="2023 ESC Guidelines for the management of acute coronary syndromes",
+        organization="European Society of Cardiology (European Heart Journal)",
+        url="https://academic.oup.com/eurheartj/article/44/38/3720/7243210",
+    ),
     "stemi_mimics_2024": GuidanceSource(
         id="stemi_mimics_2024",
         title="STEMI mimics: the differential diagnosis of non-ACS causes of ST-segment/T-wave abnormalities in the chest pain patient",
@@ -259,6 +316,10 @@ class FindingRule:
     # Reported symptoms that make THIS condition Red (beyond the global rules).
     red_if: frozenset[str] = frozenset()
     red_reason: str = ""
+    known_as: str = ""
+    known_reason: str = ""
+    ask_first: str = ""
+    ask_first_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -297,6 +358,12 @@ _ATRIAL_FIB = FindingRule(
         "Atrial fibrillation needs prompt confirmation, a heart-rate check, and a "
         "stroke-risk assessment."
     ),
+    known_as="known_af_flutter",
+    known_reason=(
+        "Atrial fibrillation or flutter was reported as already known, so "
+        "routine review is enough unless symptoms, history, or other findings "
+        "raise the tier."
+    ),
     summary=(
         "Atrial fibrillation is an irregular atrial rhythm that raises stroke "
         "risk and can make the heart beat fast. It needs clinician confirmation "
@@ -305,11 +372,13 @@ _ATRIAL_FIB = FindingRule(
     next_steps=(
         "Ask whether this AF is new. New AF needs a heart-rate check, a search "
         "for causes (for example thyroid disease, high blood pressure, sleep "
-        "apnoea, alcohol), and a formal stroke-risk assessment.",
+        "apnoea, obesity, alcohol), and a formal stroke-risk assessment.",
         "Do not start, stop, or change aspirin, a blood thinner, or heart-rhythm "
-        "medicine based on this screening result.",
+        "medicine based on this screening result. Aspirin is no longer "
+        "recommended for stroke prevention in AF; ask the clinician which "
+        "option is right.",
     ),
-    sources=("aha_af_symptoms", "acc_af_2023", "merck_af"),
+    sources=("aha_af_symptoms", "acc_af_2023", "merck_af", "esc_af_2024"),
 )
 
 _LBBB = FindingRule(
@@ -317,6 +386,11 @@ _LBBB = FindingRule(
     reason=(
         "The app usually cannot tell whether this LBBB is new, and a new LBBB "
         "needs prompt evaluation, including an echocardiogram."
+    ),
+    known_as="known_lbbb",
+    known_reason=(
+        "The LBBB was reported as already known from an earlier ECG, so routine "
+        "review is enough unless symptoms, history, or other findings raise the tier."
     ),
     summary=(
         "Left bundle branch block markedly increases the likelihood of "
@@ -343,7 +417,7 @@ FINDING_RULES: dict[str, FindingRule] = {
         ),
         next_steps=(
             "If this ECG was recorded because of a symptom or concern, still "
-            "share the original tracing with the clinician who ordered it.",
+            "share the original tracing with the clinician who requested it.",
         ),
         sources=("aha_heart_attack", "cdc_stroke"),
     ),
@@ -371,14 +445,14 @@ FINDING_RULES: dict[str, FindingRule] = {
             "normal in physically fit people and during sleep. It matters when "
             "it causes tiredness, dizziness, breathlessness, or fainting, or "
             "when it comes from medicines or conditions such as an underactive "
-            "thyroid."
+            "thyroid or sleep apnoea."
         ),
         next_steps=(
             "Tell the clinician about heart-rate-slowing medicines (for example "
             "beta-blockers, including eye drops, some calcium-channel blockers, "
             "antiarrhythmics, lithium) and about fitness level.",
-            "Ask whether a thyroid or electrolyte blood test is appropriate if "
-            "no obvious cause is found.",
+            "Ask whether a thyroid or electrolyte blood test, or an assessment "
+            "for sleep apnoea, is appropriate if no obvious cause is found.",
         ),
         sources=("acc_conduction_2018", "aha_bradycardia", "cleveland_sinus_brady"),
     ),
@@ -388,15 +462,20 @@ FINDING_RULES: dict[str, FindingRule] = {
             "Sinus tachycardia (a regular rhythm over 100 beats/min) is usually "
             "the heart responding to something else — exercise, anxiety, pain, "
             "fever, dehydration, anaemia, blood loss, an overactive thyroid, "
-            "caffeine or other stimulants, or medicines. Treatment targets the "
-            "cause."
+            "caffeine or other stimulants, or medicines. At rest, important "
+            "causes to rule out include a blood clot in the lungs (pulmonary "
+            "embolism), infection or sepsis, and heart failure. Treatment "
+            "targets the cause."
         ),
         next_steps=(
             "Ask the clinician to look for the cause (for example fever, "
-            "dehydration, anaemia, thyroid, stimulants, medicines), especially "
-            "if the fast rate persists at rest.",
+            "infection, dehydration, anaemia, thyroid, stimulants, medicines, "
+            "a blood clot in the lungs, or heart failure), especially if the "
+            "fast rate persists at rest.",
+            "For the clinician: a rate near 150 beats/min read as sinus "
+            "tachycardia should be checked for atrial flutter with 2:1 conduction.",
         ),
-        sources=("cleveland_sinus_tachy",),
+        sources=("cleveland_sinus_tachy", "merck_afl"),
     ),
     "LBBB": _LBBB,
     "LQT": FindingRule(
@@ -407,18 +486,22 @@ FINDING_RULES: dict[str, FindingRule] = {
         ),
         summary=(
             "A long QT interval can be inherited or caused by medicines, low "
-            "potassium or magnesium, or a slow heart rate. It raises the risk "
+            "potassium, magnesium, or calcium, or a slow heart rate. It raises the risk "
             "of torsades de pointes, a dangerous ventricular rhythm that causes "
             "fainting and can cause sudden death; the risk rises steeply when "
-            "the corrected QT exceeds 500 ms."
+            "the corrected QT exceeds 500 ms. This model flags a long-QT "
+            "pattern; it does not measure the QT interval."
         ),
         next_steps=(
-            "Ask a clinician today to measure the corrected QT interval and to "
-            "check potassium and magnesium.",
+            "Ask a clinician today to measure the corrected QT interval by "
+            "hand — the model does not measure it, and the measurement is "
+            "unreliable in atrial fibrillation, atrial flutter, or bundle "
+            "branch block — and to check potassium, magnesium, and calcium.",
             "Bring a list of every medicine and supplement. Many antibiotics, "
             "antidepressants, antipsychotics, antiarrhythmics, and anti-nausea "
             "medicines prolong QT — ask the prescriber today rather than "
-            "stopping a prescribed medicine on your own.",
+            "stopping a prescribed medicine on your own. Clinicians can check "
+            "each medicine against the CredibleMeds QTdrugs list.",
             "Tell the clinician about any family history of sudden unexplained "
             "death or fainting, which can point to inherited long QT syndrome.",
         ),
@@ -433,8 +516,15 @@ FINDING_RULES: dict[str, FindingRule] = {
     "AFL": FindingRule(
         tier="orange",
         reason=(
-            "Atrial flutter often runs near 150 beats/min and carries the same stroke-"
-            "prevention considerations as atrial fibrillation."
+            "Atrial flutter often produces a ventricular rate near 150 beats/min "
+            "(2:1 conduction) and carries the same stroke-prevention "
+            "considerations as atrial fibrillation."
+        ),
+        known_as="known_af_flutter",
+        known_reason=(
+            "Atrial fibrillation or flutter was reported as already known, so "
+            "routine review is enough unless symptoms, history, or other "
+            "findings raise the tier."
         ),
         summary=(
             "Atrial flutter is a fast atrial rhythm, often with a regular heart "
@@ -443,12 +533,12 @@ FINDING_RULES: dict[str, FindingRule] = {
             "periods of AF."
         ),
         next_steps=(
-            "Ask for heart-rate control and a formal stroke-risk assessment, and "
+            "Ask about heart-rate control and a formal stroke-risk assessment, and "
             "whether cardioversion or catheter ablation is appropriate.",
             "Do not start, stop, or change a blood thinner or heart-rhythm "
             "medicine based on this screening result.",
         ),
-        sources=("merck_afl", "acc_af_2023"),
+        sources=("merck_afl", "acc_af_2023", "esc_af_2024"),
     ),
     "3AVB": FindingRule(
         tier="red",
@@ -460,13 +550,19 @@ FINDING_RULES: dict[str, FindingRule] = {
             "Third-degree (complete) AV block means no atrial beats reach the "
             "ventricles; the heart depends on a slow back-up rhythm that can "
             "fail, causing fainting or sudden death. Without a reversible cause, "
-            "a permanent pacemaker is recommended even without symptoms."
+            "a permanent pacemaker is recommended even without symptoms. "
+            "An echocardiogram is recommended (2018 conduction guideline, Class I)."
         ),
         next_steps=(
             "Tell the emergency team the ECG may show complete heart block, and "
             "give them the list of medicines, since some (for example "
-            "beta-blockers, calcium-channel blockers, digoxin) can cause or "
-            "worsen AV block.",
+            "beta-blockers, non-dihydropyridine calcium-channel blockers, "
+            "digoxin) can cause or "
+            "worsen AV block. The team will also check for other reversible "
+            "causes such as high potassium (hyperkalaemia), an acute inferior "
+            "heart attack, or Lyme disease where it occurs.",
+            "An echocardiogram is recommended for complete heart block (2018 "
+            "conduction guideline, Class I).",
         ),
         sources=("merck_av_block", "acc_conduction_2018"),
     ),
@@ -491,7 +587,8 @@ FINDING_RULES: dict[str, FindingRule] = {
             "determine the type (Mobitz I, Mobitz II, 2:1, or high-grade) from "
             "the full tracing.",
             "Review medicines that slow AV conduction; for Mobitz type II or "
-            "high-grade block, an echocardiogram is recommended (Class I).",
+            "high-grade block, an echocardiogram is recommended (2018 conduction "
+            "guideline, Class I).",
         ),
         sources=("merck_av_block", "acc_conduction_2018"),
         red_if=frozenset({"dizziness", "fainting"}),
@@ -509,17 +606,18 @@ FINDING_RULES: dict[str, FindingRule] = {
         ),
         summary=(
             "This pattern suggests an ST-elevation heart attack — a coronary "
-            "artery may be blocked. Reopening it is time-critical: the 2025 "
-            "ACS guideline targets 90 minutes or less from first medical "
-            "contact to treatment at a PCI-capable hospital."
+            "artery may be blocked. Reopening it is time-critical: guidelines "
+            "target 90 minutes or less from first medical contact to treatment "
+            "at a PCI-capable hospital, or 120 minutes or less when transfer "
+            "to one is needed."
         ),
         next_steps=(
-            "This applies even with no pain right now: the ambulance team can "
+            "Even with no pain right now, the ambulance team can "
             "record a new ECG and alert a heart-attack centre on the way.",
             "Stop any activity and rest while waiting. Take aspirin only if the "
             "dispatcher or a clinician tells you to.",
         ),
-        sources=("acc_acs_2025", "aha_heart_attack"),
+        sources=("acc_acs_2025", "aha_heart_attack", "esc_acs_2023"),
     ),
     "STE": FindingRule(
         tier="orange",
@@ -527,12 +625,18 @@ FINDING_RULES: dict[str, FindingRule] = {
             "ST elevation must be treated as a possible heart attack until a clinician"
             " compares it with the patient's symptoms and earlier ECGs."
         ),
+        ask_first="chest_pain",
+        ask_first_reason=(
+            "The model flagged ST elevation. With chest pain this is an "
+            "emergency (Red), so answer this before reading the result."
+        ),
         summary=(
             "ST elevation can be an acute heart attack, but many other "
             "conditions cause it — normal early repolarization, pericarditis, "
-            "left ventricular hypertrophy, LBBB, or an old infarct. Among "
-            "chest-pain patients with ST elevation, most (about 60–80%) do not "
-            "turn out to have a STEMI, so a clinician must read the tracing."
+            "left ventricular hypertrophy, LBBB, an old infarct or left "
+            "ventricular aneurysm, or Brugada pattern. Among chest-pain patients "
+            "with ST elevation, most do not turn out to have a STEMI, so a "
+            "clinician must read the tracing."
         ),
         next_steps=(
             "Have a clinician read this ECG today, ideally against a previous "
@@ -645,8 +749,13 @@ COMBINATIONS: tuple[Combination, ...] = (
         all_of=frozenset({"LBBB", "1AVB"}),
         tier="orange",
         note=(
-            "First-degree AV block together with LBBB is what the 2018 "
-            "conduction guideline calls extensive conduction disease."
+            "First-degree AV block together with LBBB suggests disease in more "
+            "than one part of the conduction system."
+        ),
+        next_steps=(
+            "If an echocardiogram has not been done, ask for one: it is "
+            "recommended for newly identified LBBB (2018 conduction guideline, "
+            "Class I).",
         ),
         sources=("acc_conduction_2018",),
     ),
@@ -655,8 +764,9 @@ COMBINATIONS: tuple[Combination, ...] = (
         tier="orange",
         note=(
             "LBBB itself shifts the ST segment, so ST elevation with LBBB cannot "
-            "be read with the usual criteria; a clinician must compare it with "
-            "earlier ECGs. Any chest pain makes this an emergency."
+            "be read with the usual criteria; a clinician should apply the "
+            "Sgarbossa or modified Sgarbossa (Smith) criteria and compare the "
+            "tracing with earlier ECGs. Any chest pain makes this an emergency."
         ),
         sources=("acc_acs_2025", "stemi_mimics_2024"),
     ),
@@ -672,14 +782,17 @@ COMBINATIONS: tuple[Combination, ...] = (
     ),
     Combination(
         all_of=frozenset({"SB", "1AVB"}),
-        tier="orange",
+        tier="yellow",
         note=(
-            "A slow sinus rate together with a long PR interval can both come "
-            "from medicines that slow the AV node."
+            "Sinus bradycardia with first-degree AV block is a common, usually "
+            "benign pairing (fitness, sleep, vagal tone, or medicines that slow "
+            "the AV node), so on its own it stays Yellow; symptoms or heart "
+            "history raise it."
         ),
         next_steps=(
             "Ask the clinician to review AV-nodal-blocking medicines — "
-            "beta-blockers, calcium-channel blockers, and digoxin — which can "
+            "beta-blockers, non-dihydropyridine calcium-channel blockers "
+            "(verapamil, diltiazem), and digoxin — which can "
             "cause both a slow heart rate and a long PR interval.",
         ),
         sources=("acc_conduction_2018", "merck_av_block"),
@@ -715,9 +828,10 @@ COMBINATIONS: tuple[Combination, ...] = (
         any_of=frozenset({"1AVB", "2AVB"}),
         tier="orange",
         note=(
-            "In atrial flutter, 2:1 or 4:1 conduction is normal flutter "
-            "physiology, not true second-degree AV block, and the PR interval "
-            "cannot be measured reliably. A clinician needs to read the tracing."
+            "In atrial flutter the PR interval cannot be measured reliably, so "
+            "an AV-block flag cannot be read reliably together with flutter; "
+            "2:1 or 4:1 conduction is normal flutter physiology, not true "
+            "second-degree AV block. A clinician needs to read the tracing."
         ),
         sources=("merck_afl", "merck_av_block"),
     ),
@@ -740,6 +854,7 @@ COMBINATIONS: tuple[Combination, ...] = (
             "mean complete heart block. Digoxin toxicity is one possible cause, "
             "so the full medication list is important."
         ),
+        next_steps=("Tell the emergency team whether the patient takes digoxin.",),
         sources=("merck_af", "merck_av_block"),
     ),
     Combination(
@@ -772,11 +887,13 @@ COMBINATIONS: tuple[Combination, ...] = (
         sources=("aha_ecg_qt_2009", "merck_tdp_lqt"),
     ),
     Combination(
-        all_of=frozenset({"LQT", "AF"}),
+        all_of=frozenset({"LQT"}),
+        any_of=frozenset({"AF", "AFL"}),
         tier="orange",
         note=(
-            "The QT interval is unreliable in an irregular rhythm such as AF. "
-            "A clinician should average the QT over several beats."
+            "The QT interval is unreliable in atrial fibrillation or flutter. "
+            "A clinician should measure the QT manually, averaging it over "
+            "several beats."
         ),
         sources=("aha_ecg_qt_2009", "merck_tdp_lqt"),
     ),
@@ -824,15 +941,24 @@ class RuleSet:
         return frozenset(self.served_labels) - {self.normal_label}
 
 
+# The clean12 label set. Both clean12 checkpoints serve it in this order; the
+# rules are per condition, so V1-R reuses the set reviewed for plain V1 Base.
+_CLEAN12_LABELS = (
+    "NORM", "SB", "STACH", "LBBB", "LQT", "AF", "AFL", "3AVB",
+    "2AVB", "1AVB", "STEMI", "STE",
+)
+
 RULE_SETS: dict[str, RuleSet] = {
     rs.model_id: rs
     for rs in (
         RuleSet(
             model_id="convnext_v1_base_clean12",
-            served_labels=(
-                "NORM", "SB", "STACH", "LBBB", "LQT", "AF", "AFL", "3AVB",
-                "2AVB", "1AVB", "STEMI", "STE",
-            ),
+            served_labels=_CLEAN12_LABELS,
+            suppressed_labels=frozenset(),
+        ),
+        RuleSet(
+            model_id="convnext_v1_base_rfpn_clean12",
+            served_labels=_CLEAN12_LABELS,
             suppressed_labels=frozenset(),
         ),
         RuleSet(
@@ -866,6 +992,20 @@ assert all(r.red_reason for r in FINDING_RULES.values() if r.red_if)
 _served = frozenset(label for rs in RULE_SETS.values() for label in rs.served_labels)
 assert all((combo.all_of | combo.any_of) <= _served for combo in COMBINATIONS)
 assert all(combo.note.strip() for combo in COMBINATIONS)
+assert RED_SYMPTOMS | CARDIAC_SYMPTOMS | SYNCOPE_RED_SYMPTOMS <= set(get_args(Symptom))
+assert HEART_HISTORY | AF_STROKE_RISKS <= set(get_args(RiskFactor))
+assert all(
+    r.known_as in get_args(RiskFactor) and r.tier == "orange" and r.known_reason
+    for r in FINDING_RULES.values() if r.known_as
+)
+assert all(
+    r.ask_first in SYMPTOM_QUESTIONS
+    and r.ask_first in RED_SYMPTOMS | r.red_if
+    and r.ask_first_reason
+    for r in FINDING_RULES.values() if r.ask_first
+)
+assert BENIGN_PAIR <= _served
+assert all(FINDING_RULES[label].tier == "yellow" for label in BENIGN_PAIR)
 
 
 def rule_set_for(descriptor: ModelDescriptor) -> RuleSet | None:
@@ -911,27 +1051,34 @@ def _rhythm_conflict(flagged: set[str]) -> str | None:
     sinus = flagged & {"SB", "STACH"}
     atrial = flagged & {"AF", "AFL"}
     if "STACH" in sinus and (len(sinus) == 2 or atrial):
-        return (
+        note = (
             "The model flagged rhythms that cannot both be the underlying "
             "rhythm of one tracing (" + ", ".join(sorted(sinus | atrial)) + "). "
-            "A clinician must read the rhythm; guidance uses the more urgent one."
+            "A clinician must read the rhythm. Guidance includes the steps for "
+            "both findings and applies the higher urgency."
         )
+        if {"STACH", "AFL"} <= flagged:
+            note += " Atrial flutter with 2:1 conduction is often misread as sinus tachycardia."
+        return note
     return None
 
 
-def _tier_steps(tier: UrgencyLevel, context_complete: bool) -> list[str]:
+def _tier_steps(tier: UrgencyLevel, context_complete: bool, *,
+                prompt_review: bool = False) -> list[str]:
     if tier == "red":
         return [
             "Call 911 now — the Philippine emergency hotline. Do not wait to "
             "see whether symptoms settle.",
             "Do not drive yourself. Stay with someone if possible and follow the "
             "dispatcher's instructions.",
+            "If the person collapses and is not breathing normally, start CPR "
+            "and use an AED if one is available.",
             "Show the ECG to the emergency team; do not delay to retake the photo "
             "or re-run the model.",
         ]
     if tier == "orange":
         return [
-            "Get a medical assessment today: contact the clinician who recorded "
+            "Get a medical assessment today: contact the clinician who requested "
             "the ECG, or go to an urgent-care centre or emergency department if "
             "they cannot see the patient today.",
             "Bring the original ECG and a list of all medicines and supplements, "
@@ -945,10 +1092,18 @@ def _tier_steps(tier: UrgencyLevel, context_complete: bool) -> list[str]:
             "follow-up already planned and share the ECG with the clinician who "
             "requested it.",
         ]
+    elif prompt_review:
+        steps = [
+            "See the clinician who requested the ECG, or a primary-care "
+            "clinician, within a few days because of the palpitations or "
+            "dizziness, and ask whether heart-rhythm monitoring (for example "
+            "a Holter monitor) is needed.",
+        ]
     else:
         steps = [
-            "Book a routine appointment with the clinician who requested the ECG, "
-            "or a primary-care clinician, to confirm and interpret the result.",
+            "Book a routine appointment within the next few weeks with the "
+            "clinician who requested the ECG, or a primary-care clinician, "
+            "to confirm and interpret the result.",
         ]
     steps.append("Do not start, stop, or change medicine based on this screening output.")
     if not context_complete:
@@ -995,7 +1150,9 @@ def assess(*, run_id: str, positive: list[str], display_names: dict[str, str],
     # 1) Each flagged condition's baseline tier.
     for label in abnormal:
         rule = FINDING_RULES[label]
-        if rule.tier != "yellow":
+        if rule.known_as in risks:
+            raise_to("yellow", rule.known_reason)
+        elif rule.tier != "yellow":
             raise_to(rule.tier, rule.reason)
 
     cautions: list[str] = []
@@ -1006,28 +1163,71 @@ def assess(*, run_id: str, positive: list[str], display_names: dict[str, str],
             "A pediatric ECG needs a clinician's interpretation; the adult "
             "rules used here do not apply to children.",
         )
+    if "pacemaker_icd" in risks:
+        cautions.append(PACED_CAUTION)
+        raise_to(
+            "yellow",
+            "A pacemaker or ICD changes the ECG, so a clinician needs to read "
+            "it; a Normal flag does not replace that.",
+        )
 
     # 2) Symptoms. Emergency symptoms override the model entirely.
     red_symptoms = symptoms & RED_SYMPTOMS
     if red_symptoms:
         raise_to("red", "Reported emergency warning symptoms override the ECG screening result.")
+    if symptoms & SYNCOPE_RED_SYMPTOMS:
+        raise_to(
+            "red",
+            "Fainting during exertion or while lying down is a high-risk "
+            "feature that needs emergency assessment.",
+        )
     if "fainting" in symptoms and abnormal:
         raise_to("red", "Fainting or near-fainting with an abnormal ECG flag needs emergency assessment.")
+    if "fainting" in symptoms and risks & HEART_HISTORY:
+        raise_to(
+            "red",
+            "Fainting with known heart failure or structural heart disease "
+            "needs emergency assessment, even with a normal ECG.",
+        )
+    if {"fainting", "palpitations"} <= symptoms:
+        raise_to(
+            "red",
+            "Fainting together with palpitations suggests a heart-rhythm cause "
+            "and needs emergency assessment.",
+        )
     for label in abnormal:
         rule = FINDING_RULES[label]
         if rule.red_if & symptoms:
             raise_to("red", rule.red_reason)
-    if abnormal and symptoms & {"palpitations", "dizziness"}:
+    if abnormal and symptoms & PROMPT_REVIEW_SYMPTOMS:
         raise_to("orange", "An abnormal ECG flag plus palpitations or dizziness needs same-day assessment.")
-    if not abnormal and symptoms & CARDIAC_SYMPTOMS:
-        raise_to("orange", "Palpitations, dizziness, or fainting need same-day assessment even without an abnormal flag.")
+    if not abnormal and "fainting" in symptoms:
+        raise_to(
+            "orange",
+            "Fainting or near-fainting needs same-day assessment even without "
+            "an abnormal flag.",
+        )
+    if not abnormal and symptoms & PROMPT_REVIEW_SYMPTOMS:
+        if normal_only:
+            raise_to(
+                "yellow",
+                "Palpitations or dizziness with a Normal ECG read need a "
+                "clinician review within a few days, including whether "
+                "heart-rhythm monitoring is needed.",
+            )
+        else:
+            raise_to(
+                "orange",
+                "Palpitations or dizziness need same-day assessment because "
+                "the model gave no reading of this ECG.",
+            )
 
     # 3) History and multiplicity.
     if abnormal and risks & HEART_HISTORY:
         raise_to("orange", "Known heart failure or heart disease changes the significance of this ECG finding.")
     if not abnormal and risks & HEART_HISTORY:
         raise_to("yellow", "Known heart failure or heart disease needs its usual clinician follow-up; a Normal flag does not replace it.")
-    if len(abnormal) > 1:
+    if len(abnormal) > 1 and flagged != BENIGN_PAIR:
         raise_to("orange", "More than one abnormal condition crossed its model threshold.")
 
     # 4) Listed combinations.
@@ -1074,7 +1274,13 @@ def assess(*, run_id: str, positive: list[str], display_names: dict[str, str],
                 "threshold, so a clinician should read the ECG."
             ]
 
-    steps = _tier_steps(tier, request.context_complete)
+    prompt_review = (
+        tier == "yellow" and normal_only
+        and bool(symptoms & PROMPT_REVIEW_SYMPTOMS)
+    )
+    steps = _tier_steps(tier, request.context_complete, prompt_review=prompt_review)
+    if not detected and tier != "red":
+        steps.append(RETAKE_STEP)
     af_risk = (
         request.age_group != "under_18"
         and (request.age_group in {"65_74", "75_plus"} or bool(risks & AF_STROKE_RISKS))
@@ -1092,11 +1298,13 @@ def assess(*, run_id: str, positive: list[str], display_names: dict[str, str],
     elif tier == "orange":
         headline = "Urgent: this result needs a medical assessment today."
     elif tier == "green":
-        headline = "Normal ECG flagged — no extra action needed from this result."
+        headline = "The model read this ECG as normal. No extra action needed from this result."
     elif abnormal:
         headline = "Not an emergency on the information given — book a routine review."
+    elif normal_only and prompt_review:
+        headline = "The model read this ECG as normal — see a clinician within a few days about the symptoms."
     elif normal_only:
-        headline = "Normal ECG flagged — book a routine review to have the ECG read."
+        headline = "The model read this ECG as normal — book a routine review to have the ECG read."
     else:
         headline = "No condition flagged — book a routine review to have the ECG read."
 
@@ -1107,12 +1315,24 @@ def assess(*, run_id: str, positive: list[str], display_names: dict[str, str],
              "symptoms, age, and heart history can raise the tier."
     )
 
+    priority_question: GuidancePriorityQuestion | None = None
+    if not request.context_complete and tier != "red":
+        for label in detected:
+            rule = FINDING_RULES[label]
+            if rule.ask_first and rule.ask_first not in symptoms:
+                priority_question = GuidancePriorityQuestion(
+                    symptom=rule.ask_first,
+                    question=SYMPTOM_QUESTIONS[rule.ask_first],
+                    reason=rule.ask_first_reason,
+                )
+                break
+
     finding_labels = detected or ["NONE"]
     finding_items = [
         FindingGuidance(
             finding=label,
             display_name=name(label) if label != "NONE" else "No condition flagged",
-            tier=FINDING_RULES[label].tier,
+            tier="yellow" if FINDING_RULES[label].known_as in risks else FINDING_RULES[label].tier,
             summary=FINDING_RULES[label].summary,
             next_steps=list(FINDING_RULES[label].next_steps),
             source_ids=list(FINDING_RULES[label].sources),
@@ -1130,7 +1350,7 @@ def assess(*, run_id: str, positive: list[str], display_names: dict[str, str],
         source_ids = _dedupe([*source_ids, "aha_heart_attack"])
     if "stroke_signs" in symptoms:
         source_ids = _dedupe([*source_ids, "cdc_stroke"])
-    if "fainting" in symptoms:
+    if symptoms & {"fainting", "fainting_exertion_or_supine"}:
         source_ids = _dedupe([*source_ids, "acc_syncope_2017"])
 
     return GuidanceResponse(
@@ -1146,11 +1366,7 @@ def assess(*, run_id: str, positive: list[str], display_names: dict[str, str],
         headline=headline,
         reasons=_dedupe(final_reasons),
         recommended_next_steps=_dedupe(steps),
-        safety_net=(
-            "Symptoms override this screening result. For chest pain or "
-            "pressure, severe or worsening trouble breathing, stroke signs, or "
-            "fainting, call 911."
-        ),
+        safety_net=SAFETY_NET,
         context=GuidanceContext(
             age_group=request.age_group,
             symptoms=request.symptoms,
@@ -1161,6 +1377,8 @@ def assess(*, run_id: str, positive: list[str], display_names: dict[str, str],
         finding_guidance=finding_items,
         combination_notes=_dedupe(combination_notes),
         cautions=cautions,
+        priority_question=priority_question,
+        scope_note=SCOPE_NOTE,
         sources=[_SOURCES[source_id] for source_id in source_ids],
         disclaimer=DISCLAIMER,
     )
