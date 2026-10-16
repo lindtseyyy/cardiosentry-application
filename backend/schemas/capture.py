@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from backend.schemas.ecg_gate import EcgGateInfo
+
 CaptureIdPattern = r"^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6}_[0-9a-f]{6}$"
 
 Point = tuple[float, float]   # normalized [0,1] in API requests
@@ -106,6 +108,7 @@ class CaptureRecord(BaseModel):
     original: dict = Field(default_factory=dict)
     quality_original: QualityMetrics | None = None
     detection: DetectionInfo | None = None
+    ecg_gate: EcgGateInfo | None = None             # None = gate off / pre-gate capture
     correction: CorrectionInfo | None = None
     preprocess: dict | None = None
     quality_model_input: QualityMetrics | None = None

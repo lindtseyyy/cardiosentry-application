@@ -89,6 +89,7 @@ function uploadFromRecord(rec: CaptureRecord): CaptureUploadResponse | null {
   return {
     capture_id: rec.capture_id,
     original: rec.original,
+    ecg_gate: rec.ecg_gate ?? null,
     detection: rec.detection,
     quality: rec.quality_original ?? ({} as CaptureUploadResponse["quality"]),
     files: { preview: `${base}/files/preview.jpg`, overlay: `${base}/files/overlay.jpg` },

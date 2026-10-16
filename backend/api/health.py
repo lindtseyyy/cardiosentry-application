@@ -19,6 +19,7 @@ def health(request: Request):
         "status": "ok",
         "model_loaded": lm is not None,
         "active_model": lm.id if lm else None,
+        "ecg_gate": st.ecg_gate.id if st.ecg_gate else None,
         "device": settings.device,
         "torch_version": torch.__version__,
         "uptime_s": round(st.uptime_s, 1),

@@ -36,12 +36,54 @@ class LoadedDescriptor:
         return self.descriptor.id
 
 
-def _sha256_file(path: Path) -> str:
+def sha256_file(path: Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def resolve_arch_module(module: str, registry_key: str, label: str):
+    """The vendored module exposing both REGISTRY (with `registry_key`) and
+    build(). Descriptors may name it as `arch.hybrids_v1` (plan-literal) or
+    `backend.arch.hybrids_v1` (fully qualified); resolve either. The REGISTRY
+    may live on the package or on its `hybrids`/`models` submodule (the
+    vendored layout). `label` prefixes every error (the YAML file name)."""
+    arch_module = None
+    candidates = [module]
+    if not module.startswith("backend."):
+        candidates.append("backend." + module)
+    for mod_name in candidates:
+        try:
+            arch_module = importlib.import_module(mod_name)
+            break
+        except ModuleNotFoundError as exc:
+            if exc.name != mod_name and not mod_name.startswith(exc.name + "."):
+                raise RegistryError(
+                    f"{label}: could not import architecture module "
+                    f"{mod_name!r}:\n  {exc}") from exc
+    if arch_module is None:
+        raise RegistryError(
+            f"{label}: could not import architecture module "
+            f"{module!r} (tried {candidates})")
+    resolved_name = arch_module.__name__
+    registry = getattr(arch_module, "REGISTRY", None)
+    if not isinstance(registry, dict):
+        for sub in ("hybrids", "models"):
+            try:
+                sub_mod = importlib.import_module(f"{resolved_name}.{sub}")
+            except ModuleNotFoundError:
+                continue
+            reg = getattr(sub_mod, "REGISTRY", None)
+            if isinstance(reg, dict):
+                registry, arch_module, resolved_name = reg, sub_mod, sub_mod.__name__
+                break
+    if not isinstance(registry, dict) or registry_key not in registry:
+        raise RegistryError(
+            f"{label}: architecture module {resolved_name!r} "
+            f"has no REGISTRY entry {registry_key!r}")
+    return arch_module
 
 
 def _active_id_from_symlink() -> str | None:
@@ -76,46 +118,10 @@ def discover() -> dict[str, LoadedDescriptor]:
             raise RegistryError(f"{yp.name}: weights must be a .pt file: {weights_path}")
 
         # Architecture module must import and expose the registry key now.
-        # Descriptors may name it as `arch.hybrids_v1` (plan-literal) or
-        # `backend.arch.hybrids_v1` (fully qualified); resolve either.
-        arch_module = None
-        candidates = [desc.architecture.module]
-        if not desc.architecture.module.startswith("backend."):
-            candidates.append("backend." + desc.architecture.module)
-        for mod_name in candidates:
-            try:
-                arch_module = importlib.import_module(mod_name)
-                break
-            except ModuleNotFoundError as exc:
-                if exc.name != mod_name and not mod_name.startswith(exc.name + "."):
-                    raise RegistryError(
-                        f"{yp.name}: could not import architecture module "
-                        f"{mod_name!r}:\n  {exc}") from exc
-        if arch_module is None:
-            raise RegistryError(
-                f"{yp.name}: could not import architecture module "
-                f"{desc.architecture.module!r} (tried {candidates})")
-        # The REGISTRY may live on the package or on its `hybrids`/`models`
-        # submodule (the vendored layout). `arch_module` must end up being the
-        # module that exposes both REGISTRY and build().
-        resolved_name = arch_module.__name__
-        registry = getattr(arch_module, "REGISTRY", None)
-        if not isinstance(registry, dict):
-            for sub in ("hybrids", "models"):
-                try:
-                    sub_mod = importlib.import_module(f"{resolved_name}.{sub}")
-                except ModuleNotFoundError:
-                    continue
-                reg = getattr(sub_mod, "REGISTRY", None)
-                if isinstance(reg, dict):
-                    registry, arch_module, resolved_name = reg, sub_mod, sub_mod.__name__
-                    break
-        if not isinstance(registry, dict) or desc.architecture.registry_key not in registry:
-            raise RegistryError(
-                f"{yp.name}: architecture module {resolved_name!r} "
-                f"has no REGISTRY entry {desc.architecture.registry_key!r}")
+        arch_module = resolve_arch_module(desc.architecture.module,
+                                          desc.architecture.registry_key, yp.name)
 
-        sha = _sha256_file(weights_path)
+        sha = sha256_file(weights_path)
         if desc.expected_sha256 and desc.expected_sha256 != sha:
             raise RegistryError(
                 f"{yp.name}: checkpoint sha256 mismatch — descriptor claims\n"

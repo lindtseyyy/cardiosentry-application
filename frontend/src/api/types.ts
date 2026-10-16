@@ -33,6 +33,7 @@ export interface HealthResponse {
   status: string;
   model_loaded: boolean;
   active_model: string | null;
+  ecg_gate: string | null;
   device: string;
   torch_version: string;
   uptime_s: number;
@@ -296,10 +297,25 @@ export interface OriginalInfo {
   [key: string]: unknown;
 }
 
+// ECG / not-ECG gate result for an accepted upload (rejected uploads are a
+// 422 NOT_AN_ECG and never become captures). learned: score = P(ECG);
+// ocr_lead_labels: score = distinct counted lead labels read, threshold = min.
+export interface EcgGateInfo {
+  gate_id: string;
+  kind: "learned" | "ocr_lead_labels";
+  score: number;
+  threshold: number;
+  accepted: boolean;
+  forward_ms: number;
+  checkpoint_sha256_short: string | null;
+  leads_found: string[] | null;
+}
+
 // --------------------------------------------------------------- upload 201
 export interface CaptureUploadResponse {
   capture_id: string;
   original: OriginalInfo;
+  ecg_gate: EcgGateInfo | null;
   detection: DetectionInfo;
   quality: QualityMetrics;
   files: { preview: string; overlay: string };
@@ -504,6 +520,7 @@ export interface CaptureRecord {
   original: OriginalInfo;
   quality_original: QualityMetrics | null;
   detection: DetectionInfo | null;
+  ecg_gate?: EcgGateInfo | null;
   correction: CorrectionInfo | null;
   preprocess: PreprocessRecord | null;
   quality_model_input: QualityMetrics | null;

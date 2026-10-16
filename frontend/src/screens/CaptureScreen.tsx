@@ -200,7 +200,13 @@ export default function CaptureScreen({ onUploaded, onOpenPrivacy }: CaptureScre
         <div className={`${panel} mb-4.5 mt-3`}>
           <div className="flex items-center gap-3 flex-wrap">
             <span className={spinnerInline} />
-            <span>Uploading… {Math.round(progress * 100)}%</span>
+            <span>
+              {progress < 1
+                ? `Uploading… ${Math.round(progress * 100)}%`
+                : health?.ecg_gate
+                  ? "Checking that this is an ECG…"
+                  : "Processing…"}
+            </span>
           </div>
           <div className="h-2.5 rounded-full bg-track overflow-hidden my-2.5">
             <div className="h-full bg-accent [transition:width_0.15s_ease]" style={{ width: `${progress * 100}%` }} />

@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-Last verified against the tree: **2026-10-10**.
+Last verified against the tree: **2026-10-15**.
 
 ## Project Overview
 
@@ -19,7 +19,8 @@ Read these before re-deriving anything from source:
 ```mermaid
 flowchart LR
   U[POST /api/captures] --> I[ingest: validate, EXIF orient, strip GPS, original.jpg]
-  I --> D[detect: OpenCV paper quad + fallback ladder]
+  I --> E[ECG gate: not an ECG = 422 NOT_AN_ECG, folder removed, no record]
+  E --> D[detect: OpenCV paper quad + fallback ladder]
   D --> Q[quality: warnings only]
   R[POST /rectify] --> W[rectify: homography -> corrected.png]
   W --> P[preprocess: training chain -> model_input.png]
@@ -30,9 +31,9 @@ flowchart LR
 ```
 
 - **Stages are separate HTTP calls**: upload, then rectify, then predict. The user can fix corners in `CornerEditScreen`/`QuadEditor` between upload and rectify.
-- **Lifespan** (`backend/main.py`): `create_state()` → connect + migrate DB → create `admin`/`admin` only if the permanent `admin` account id is missing (WARNING log) → construct account/record stores → discover and validate `models/*.yaml` → load the active model → warm-up forward → **warn-only** self-check against `tests/fixtures/corpus_sheet.jpg` → disk check → print LAN URL + QR → mount `frontend/dist/`. Shutdown closes the pool.
+- **Lifespan** (`backend/main.py`): `create_state()` → connect + migrate DB → create `admin`/`admin` only if the permanent `admin` account id is missing (WARNING log) → construct account/record stores → discover and validate `models/*.yaml` → load the active model → warm-up forward → load + warm up the ECG gate (`models/gates/<CARDIOSENTRY_ECG_GATE>.yaml`; fails startup if broken) → **warn-only** self-check against `tests/fixtures/corpus_sheet.jpg` → disk check → print LAN URL + QR → mount `frontend/dist/`. Shutdown closes the pool.
 - **State/DI**: there is no `fastapi.Depends`. An `AppState` dataclass lives on `app.state.csd`, and routes call `st = get_state(request)` (`backend/api/state.py`). Lazy model loads take `AppState._load_lock`.
-- **Concurrency**: route handlers are sync `def` and run in Starlette's threadpool, except `create_capture`, which awaits `file.read()`. The async `auth_gate` middleware dispatches `AccountStore.user_for_token` with `run_in_threadpool`; never block its event loop on a database call. Every forward runs under `with lm.lock:` (`services/runner.py`). Keep new handlers sync unless they must await.
+- **Concurrency**: route handlers are sync `def` and run in Starlette's threadpool, except `create_capture`, which awaits `file.read()` and runs the ECG gate via `run_in_threadpool`. The async `auth_gate` middleware dispatches `AccountStore.user_for_token` with `run_in_threadpool`; never block its event loop on a database call. Every forward runs under `with lm.lock:` (`services/runner.py`) or the learned gate's own `LoadedGate.lock`; the OCR gate runs its Tesseract passes as parallel subprocesses (`OMP_THREAD_LIMIT=1`) on its own 4-thread pool. Keep new handlers sync unless they must await.
 - **Model is data, not code**: a descriptor `models/<id>.yaml` names an `arch.<pkg>` module, the weights, labels, thresholds, preprocess geometry, explain layer and verify block. Swapping models means repointing the `models/active.yaml` symlink. If a swap seems to need Python edits, that is the bug.
 - **Persistence**: local PostgreSQL is the record source of truth (schema v1): `accounts`, `sessions`, `captures`, `prediction_runs`, `explain_runs`, `schema_migrations`. Capture/prediction/explain records are JSONB through `RecordStore`; run rows and the capture's run-id lists change transactionally. Images and optional arrays stay on disk:
 
@@ -49,14 +50,14 @@ flowchart LR
 | Path | Purpose |
 |---|---|
 | `backend/api/` | Thin routers. One file per area: `auth`, `captures`, `explain` (also owns `GET /api/models/{id}/layers`), `guidance`, `models`, `config`, `health`; `state.py` holds the singletons |
-| `backend/services/` | All the real work: `db`, `records`, `accounts`, `ingest`, `detect`, `rectify`, `preprocess`, `quality`, `registry`, `runner`, `explain`, `guidance`, `storage` |
+| `backend/services/` | All the real work: `db`, `records`, `accounts`, `ingest`, `ecg_gate` (+ `ecg_gate_ocr`), `detect`, `rectify`, `preprocess`, `quality`, `registry`, `runner`, `explain`, `guidance`, `storage` |
 | `backend/services/db.py` | Local-only psycopg pool, readable startup failures without secrets, versioned `MIGRATIONS` under an advisory transaction lock |
 | `backend/services/records.py` | `RecordStore`: JSONB records, indexed ownership/live-row queries, locked updates, transactional run indexes, soft delete, idempotent import and NUL stripping |
 | `backend/services/accounts.py` | PostgreSQL `accounts`/`sessions`, salted PBKDF2-SHA256 (600k), 30-day sessions, immutable account ids, startup admin creation and `owner_of`. Rename preserves sessions; password change revokes other sessions transactionally |
 | `backend/services/storage.py` | Image/binary directories, id regexes, file-serving whitelists and trash moves; no JSON record readers/writers |
-| `backend/schemas/` | Pydantic v2 request/response and stored record shapes; `model_descriptor.py` |
+| `backend/schemas/` | Pydantic v2 request/response and stored record shapes; `model_descriptor.py`, `ecg_gate.py` (gate descriptor + `record.ecg_gate`) |
 | `backend/arch/<pkg>/` | Vendored training-time `nn.Module` code, byte-identical except for 3 documented deviations |
-| `models/` | `<id>.yaml` descriptors, the `active.yaml` symlink, `weights/` (gitignored) |
+| `models/` | `<id>.yaml` descriptors, the `active.yaml` symlink, `gates/<id>.yaml` ECG gate descriptors (not diagnostic models; `CARDIOSENTRY_ECG_GATE`), `weights/` (gitignored) |
 | `frontend/src/` | `App.tsx` (hash router), `AppContext.ts`, `screens/`, `components/`, `api/{client,types}.ts`, `styles.css` (Tailwind entry), `ui.ts` (shared utility strings) |
 | `scripts/` | `verify_model.py`, `reprocess.py`, `export_dataset.py`, `import_filesystem.py`, `make_cert.sh` |
 | `tests/` | pytest suite, `make_fixtures.py`, checked-in `fixtures/` |
@@ -136,6 +137,7 @@ There is **no lint or format tooling**: no ruff, black, mypy, ESLint or Prettier
 | Explain | `services/explain.py` + `api/explain.py` + `schemas/explain.py` + `tests/test_explain.py` |
 | Guidance rules | `services/guidance.py` (`RULE_SETS`, `FINDING_RULES`, `COMBINATIONS`; 911/CPR/AED, pediatric/pacemaker floors, known-history baselines, benign pair) + `schemas/guidance.py` (`cautions`, `combination_notes`, `priority_question`, `scope_note`) + `frontend/src/api/types.ts` + `frontend/src/components/GuidancePanel.tsx` utilities (including `print:` variants: screen-only priority gate, printable result/cautions/clinician notes/scope) / `frontend/src/styles.css` global print rules + `docs/clinical-guidance.md` + `tests/test_guidance.py` |
 | Descriptor field | `schemas/model_descriptor.py` + affected `models/*.yaml` + `models/README.md` |
+| ECG gate | `services/ecg_gate.py` (`load_gate` dispatch on descriptor `kind`, learned gate) + `services/ecg_gate_ocr.py` (OCR lead-label gate) + `schemas/ecg_gate.py` + `models/gates/*.yaml` + `api/captures.py` `create_capture` + `models/README.md` §ECG gate + `tests/test_ecg_gate.py`; switch gates with `CARDIOSENTRY_ECG_GATE=<id>` only; disabling it falsifies the privacy notice's "non-ECG photos are not stored" |
 | Setting | `settings.py` + `.env.example` |
 | Backend data handling | `frontend/src/components/PrivacyNotice.tsx` + bump `PRIVACY_NOTICE_VERSION` in `api/config.py` |
 | New model | follow `models/README.md` checklist; fixture `tests/fixtures/expected_scores_<id>.json` + `EXPECTED_SCORES` in `tests/make_fixtures.py` |
@@ -158,18 +160,18 @@ There is **no lint or format tooling**: no ruff, black, mypy, ESLint or Prettier
 
 ## Runtime/Tooling Preferences
 
-- Backend: system `python3` (3.12+) with torch, timm, fastapi and cv2 preinstalled. Install nothing into a venv. Use `opencv-python-headless`. The code normalizes the OpenCV 4/5 `HoughLinesP` shape.
+- Backend: system `python3` (3.12+) with torch, timm, fastapi and cv2 preinstalled. Install nothing into a venv. Use `opencv-python-headless`. The code normalizes the OpenCV 4/5 `HoughLinesP` shape. The default ECG gate needs the `tesseract` binary on PATH (`apt install tesseract-ocr`; 5.3.4 here, `eng` data); no Python OCR package is used.
 - Database: `psycopg[binary,pool]>=3.2` (installed: psycopg 3.3.6 / psycopg_pool 3.3.3). Install with `python3 -m pip install --user --break-system-packages 'psycopg[binary,pool]'`. PostgreSQL 16 runs in `postgres-db-cardiosentry` with volume `postgres-db-cardiosentry-data`; it must be running for the app, record scripts and DB-backed tests.
 - **Do not upgrade `timm`**. The vendored arch packages depend on its `create_model` tag semantics.
 - Frontend: Node ≥20 (required by Tailwind v4) + **npm** (`package-lock.json`). There is no other package manager.
 - Inference is CPU by default (`CARDIOSENTRY_DEVICE=cpu`, `NUM_THREADS=4`).
-- The app must make no outbound network calls. The database host guard permits only loopback/Unix sockets; the privacy notice promises data stays on this computer. Notice version: `2026-10-08.3`.
+- The app must make no outbound network calls. The database host guard permits only loopback/Unix sockets; the privacy notice promises data stays on this computer and that uploads the ECG gate rejects are not stored. Notice version: `2026-10-15.1`.
 - Scratch scripts that import `backend.*` need `sys.path.insert(0, "<app root>")`. Keep them outside the repo.
 - Back up records with `docker exec postgres-db-cardiosentry pg_dump -U cardiosentry cardiosentry` and images separately; protect backups as PHI. Losing the Docker volume loses accounts and records, not images; the legacy archive restores only pre-migration data. It is PHI, is not included in `pg_dump` or image backups, and erasure must also cover it. See README §Security & privacy for permanent erasure SQL (delete `explain_runs`, then `prediction_runs`, then `captures`), the trashed folder, per-capture archive removal, whole-archive deletion and retained copies.
 
 ## Testing & QA
 
-- pytest ≥8 + httpx `TestClient` (`pytest.ini`: `pythonpath = .`, `testpaths = tests`, `-q`). There are **238 collected cases / 113 test functions**: accounts 2 (2 functions), api_smoke 13 (13), database 2 (2), detect 9 (9), explain 19 (19), guidance 181 (57), model_descriptor 4 (4), preprocess_parity 8 (7). Cases come from `python3 -m pytest -q --collect-only`; functions are unique top-level `def test_` definitions, not parameterized cases.
+- pytest ≥8 + httpx `TestClient` (`pytest.ini`: `pythonpath = .`, `testpaths = tests`, `-q`). There are **248 collected cases / 119 test functions**: accounts 2 (2 functions), api_smoke 14 (14), database 2 (2), detect 9 (9), ecg_gate 8 (5), explain 19 (19), guidance 182 (57), model_descriptor 4 (4), preprocess_parity 8 (7). Cases come from `python3 -m pytest -q --collect-only`; functions are unique top-level `def test_` definitions, not parameterized cases.
 - `tests/conftest.py` sets env **before** importing `backend.*`, because settings is a module singleton. It sets the captures dir to `$TMPDIR/cardiosentry_test_captures`, the model pin to `CARDIOSENTRY_ACTIVE_MODEL=resnet50_cbam_nat768`, and `NUM_THREADS=2`. At import it rewrites the settings URL to `<db>_test` (`cardiosentry_test` here). The session-scoped `database_url` fixture recreates that database; `isolated_db` recreates/migrates `<db>_test_unit` (`cardiosentry_test_unit`) per test that uses it and drops it afterwards. Database creation/drop uses the `postgres` maintenance database and requires a role with that permission. Never bypass the name guards: tests must not open the real application database or use its capture directory.
 - The session-scoped `client` depends on `database_url`, loads the model once and is logged in as admin: **never log it out**. Use function-scoped `anon_client` for auth/logout tests; it shares the running app without an admin cookie or a second lifespan. Store access is `client.app.state.csd.{db,records,accounts}`.
 - **The model pin is intentional**. Assertions depend on ResNet-50 facts (`backend.layer3`, 2048 channels). Don't repoint it when the active model changes.

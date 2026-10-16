@@ -1,0 +1,39 @@
+schema_version: 1
+kind: learned
+
+id: convnext_tiny_rfpn_ecg_gate_v1
+display_name: "ECG / not-ECG gate v1 (ConvNeXt-V1 Tiny + RFPN clean12, frozen)"
+notes: "inference_with_gate.pt from MyDrive/CardioSentry/new_runs/
+        convnext_tiny_v1_rfpn_clean12_ecg_gate_v1_seed42: the
+        convnext_tiny_v1_rfpn_clean12_colab_a100_seed42 export (fingerprint
+        177e77611da26805, `model` untouched) plus a gate head trained on
+        ecg_gate_v1 (5,741 images: clean12, ECG-Image-Database D0-D2, MEETI vs
+        COCO, RVL-CDIP, ChartQA, CORD, 500 synthetic look-alikes). Best epoch 4
+        of 12. Validation + test (both geometries, 3,446 rows): AUROC 1.0; ECG
+        scores >= 0.577, non-ECG scores <= 0.061. The run's recall-0.99 rule
+        chose 0.9746, which rejected 8 real-ECG validation rows for no gain; the
+        export's gate_threshold was set to 0.5 on 2026-10-15 (no val/test
+        errors). Not evaluated on real-world non-ECG phone photos."
+
+weights: weights/convnext_tiny_rfpn_ecg_gate_v1.pt
+expected_sha256: d2b85fe4ba71bba2e065f3e33354b0c357ce71088506b4bfc351b225974359b6
+expected_protocol_fingerprint: 177e77611da26805
+
+architecture:
+  module: arch.convnext_v1_rfpn_clean12
+  registry_key: convnext_tiny_rfpn_clean12
+
+# 0.5, frozen in the .pt (gate_threshold).
+threshold:
+  source: checkpoint
+
+# The gate dataset's build (LANCZOS thumbnail to 1600 px, JPEG q95), then the
+# training `fit` geometry: LANCZOS fit to 768x1024 + p90 paper-colour pad.
+preprocess:
+  max_side: 1600
+  jpeg_quality: 95
+  input_size: [768, 1024]
+  resample: pil_lanczos
+  normalize:
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]

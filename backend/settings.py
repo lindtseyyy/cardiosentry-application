@@ -58,6 +58,14 @@ class Settings(BaseSettings):
     # Both of the above are FALLBACKS: a descriptor's `verify` block wins, so
     # the active model is always checked against its own run's stored vector.
 
+    # ECG / not-ECG gate run on every upload before a capture is created:
+    # models/gates/<id>.yaml, independent of the active model. Switch by id:
+    #   ocr_lead_labels_v1              Tesseract reads the printed lead labels
+    #   convnext_tiny_rfpn_ecg_gate_v1  learned gate head (passes EEG look-alikes)
+    # Empty = off (every upload goes on to corner detection) — and the Data
+    # Privacy Notice's "non-ECG photos are not stored" is then untrue.
+    ecg_gate: str | None = "ocr_lead_labels_v1"
+
     # ---------------------------------------------------------------- ingest limits
     max_upload_bytes: int = 30 * 1024 * 1024   # 30 MB
     max_image_pixels: int = 200_000_000        # decompression-bomb guard

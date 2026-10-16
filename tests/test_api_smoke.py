@@ -192,6 +192,27 @@ def test_predict_before_rectify_is_a_clear_error(client, fixtures):
     assert r.json()["code"] == "MISSING_MODEL_INPUT"
 
 
+def test_ecg_gate_rejects_non_ecg_and_stores_nothing(client, fixtures):
+    from backend.settings import settings
+
+    def capture_dirs():
+        return set(settings.data_dir.glob("[0-9]*/*"))
+
+    total = client.get("/api/captures").json()["total"]
+    dirs = capture_dirs()
+    with open(fixtures / "no_paper.jpg", "rb") as f:   # a bare desk, no sheet
+        r = client.post("/api/captures",
+                        files={"file": ("no_paper.jpg", f, "image/jpeg")})
+    assert r.status_code == 422, r.text
+    assert r.json()["code"] == "NOT_AN_ECG"
+    assert capture_dirs() == dirs
+    assert client.get("/api/captures").json()["total"] == total
+
+    cap = _upload_photo(client, fixtures, "photo_clean.jpg")
+    gate = client.get(f"/api/captures/{cap['capture_id']}").json()["ecg_gate"]
+    assert gate["accepted"] and gate["score"] >= gate["threshold"]
+
+
 def test_error_codes_are_stable(client):
     assert client.post("/api/captures",
                        files={"file": ("x.jpg", b"not an image", "image/jpeg")}

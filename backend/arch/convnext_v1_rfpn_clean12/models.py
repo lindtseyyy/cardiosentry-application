@@ -1,4 +1,4 @@
-"""Exact model factory used by the ConvNeXt-V1 Base + RFPN clean12 training run.
+"""Exact model factory used by the ConvNeXt-V1 + RFPN clean12 training runs.
 
 `build_model` in `prototype-code/clean_convnext_codes/
 convnext_v1_base_msff_clean12_colab_v1/make_notebook.py` with `CS_FUSION=rfpn`:
@@ -6,10 +6,14 @@ a timm `convnext_base.fb_in22k_ft_in1k_384` (twelve logits, drop-path 0.2,
 0.001 classifier init scale) wrapped in `ConvNeXtMultiScaleFusion` with an FPN
 neck over timm stages.1-3 (256 channels) and the residual head, whose logits are
 the ConvNeXt head's plus a LayerNorm + Linear over the pooled neck maps.
-`fusion_necks.py` is the run's own file, copied byte for byte. The init values
-do not matter once the weights are loaded; they are kept so the module is built
-exactly as in training and `load_state_dict(strict=True)` checks the same
-architecture.
+`convnext_tiny_rfpn_clean12` is the same build from
+`convnext_tiny_v1_rfpn_clean12_colab_v1/make_notebook.py` (ConvNeXt-V1 Tiny,
+drop-path 0.1); the app serves it as diagnostic model
+`convnext_tiny_rfpn_clean12` and as the learned ECG gate's frozen feature
+extractor (services/ecg_gate.py). `fusion_necks.py` is the runs' own file (identical in
+both), copied byte for byte. The init values do not matter once the weights are
+loaded; they are kept so the module is built exactly as in training and
+`load_state_dict(strict=True)` checks the same architecture.
 """
 from __future__ import annotations
 
@@ -23,7 +27,17 @@ REGISTRY = {
         "fusion_channels": 256,
         "bifpn_repeats": 2,
         "pretrain": "Supervised ImageNet-22K -> ImageNet-1K fine-tuning at 384px",
-    }
+    },
+    "convnext_tiny_rfpn_clean12": {
+        "timm": "convnext_tiny.fb_in22k_ft_in1k_384",
+        "num_classes": 12,
+        "drop_path_rate": 0.1,
+        "head_init_scale": 0.001,
+        "fusion": "rfpn",
+        "fusion_channels": 256,
+        "bifpn_repeats": 2,
+        "pretrain": "Supervised ImageNet-22K -> ImageNet-1K fine-tuning at 384px",
+    },
 }
 
 

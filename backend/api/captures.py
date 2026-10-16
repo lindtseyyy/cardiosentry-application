@@ -1,6 +1,6 @@
 """Capture endpoints — the staged pipeline (plan §7.1):
 
-    POST /api/captures                  ingest + detect + quality -> corner editor
+    POST /api/captures                  ingest + ECG gate + detect + quality -> corner editor
     POST /api/captures/{id}/rectify     homography warp + preprocess -> preview
     POST /api/captures/{id}/predict     model forward -> scores
     GET  /api/captures[?page]           history list
@@ -17,12 +17,14 @@ input.
 from __future__ import annotations
 
 import logging
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
 import cv2
 import numpy as np
 from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 
 from backend.api.auth import current_account, owned_capture
@@ -118,6 +120,23 @@ async def create_capture(request: Request,
     except OSError as exc:
         _error(exc)
 
+    # ECG gate (services/ecg_gate.py, kind per models/gates/<id>.yaml): a photo
+    # that is not an ECG never becomes a capture — no record, and its folder is
+    # removed, so the corner editor and the model are never reached.
+    gate = None
+    if st.ecg_gate is not None:
+        gate = await run_in_threadpool(st.ecg_gate.check, rgb)
+        if not gate.accepted:
+            shutil.rmtree(d, ignore_errors=True)
+            log.info("upload rejected by ECG gate %s (%s): score %.4g < %.4g, leads %s",
+                     gate.gate_id, gate.kind, gate.score, gate.threshold, gate.leads_found)
+            raise ApiError(
+                422, "NOT_AN_ECG",
+                "This photo doesn't look like an ECG, so it was not saved. Upload "
+                "a photo or scan of a printed 12-lead ECG sheet with its lead labels "
+                "(aVR, aVL, aVF, V1–V6) visible. If it is one, move closer so the "
+                "sheet fills most of the photo, keep it in focus, and retake it.")
+
     det = detect_quad(rgb)
     q = qual.quality_original(rgb, det.quad_px, rgb.shape[1], rgb.shape[0])
     _write_preview_and_overlay(rgb, d, det.quad_px, det.success)
@@ -157,6 +176,7 @@ async def create_capture(request: Request,
             area_fraction=det.area_fraction, aspect_ratio=det.aspect_ratio,
             params=det.params, score_breakdown=det.score_breakdown),
         annotation={"notes": notes or ""},
+        ecg_gate=gate,
     )
     try:
         st.records.create_capture(record)
@@ -168,6 +188,7 @@ async def create_capture(request: Request,
     return {
         "capture_id": capture_id,
         "original": record.original,
+        "ecg_gate": gate.model_dump(mode="json") if gate else None,
         "detection": record.detection.model_dump(mode="json"),
         "quality": q.model_dump(mode="json"),
         "files": {"preview": f"{base}/files/preview.jpg",

@@ -1,0 +1,42 @@
+schema_version: 1
+kind: ocr_lead_labels
+
+id: ocr_lead_labels_v1
+display_name: "ECG / not-ECG gate: printed lead labels (Tesseract OCR)"
+notes: "An upload is an ECG when Tesseract reads at least min_leads distinct
+        counted lead labels on it. Measured 2026-10-15 (Tesseract 5.3.4) on the
+        ecg_gate_v1 test split (125 ECG, 100 non-ECG, images <= 1600 px) plus
+        30 synthetic EEG sheets (10-20 montages, half photographed): non-ECG
+        images read at most 2 counted labels (EEG at most 1), so min_leads 4
+        leaves a margin of 2. ECG acceptance at 4: clean12 renders 25/25,
+        MEETI 25/25, ECG-Image-Database D1 19/25, D0 (black-grid scans) 8/25,
+        D2 (limb-lead-only pages, 3 counted labels printed) 3/25. Requiring 9
+        accepted 29% of ECGs. I, II, III are not counted: 'I' was read on 65 of
+        the 131 non-ECG images."
+
+# The nine labels that do not occur by chance; I/II/III are still reported in
+# leads_found. Lead names are upper case (aVR -> AVR).
+counted_leads: [AVR, AVL, AVF, V1, V2, V3, V4, V5, V6]
+min_leads: 4
+
+ocr:
+  engine: tesseract
+  resize_max_side: 2400      # labels need ~20 px height; small uploads are upscaled
+  psm: 11                    # sparse text
+  char_whitelist: "IVaRLFvrlf123456"
+  timeout_s: 20
+
+# Pass 1 serves colour-grid sheets (the grid vanishes in max(R,G,B)); pass 2
+# serves black-grid scans. Both start at once; pass 2 is only waited for when
+# pass 1 reads fewer than min_leads.
+cleanup:
+  - channel: max
+    remove_grid_lines: false
+    ink_ratio: 0.55
+    char_height: [0.004, 0.05]
+    max_char_width: 0.06
+  - channel: min
+    remove_grid_lines: true
+    ink_ratio: 0.55
+    char_height: [0.004, 0.05]
+    max_char_width: 0.06

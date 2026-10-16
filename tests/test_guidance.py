@@ -14,6 +14,7 @@ from backend.settings import APP_ROOT, settings
 
 CLEAN12 = "convnext_v1_base_clean12"
 CLEAN12_RFPN = "convnext_v1_base_rfpn_clean12"
+CLEAN12_TINY_RFPN = "convnext_tiny_rfpn_clean12"
 LEGACY = "convnextv2_tiny_v1img_v1"
 
 
@@ -34,7 +35,7 @@ def _descriptor(model_id: str) -> ModelDescriptor:
     return ModelDescriptor.model_validate(payload)
 
 
-@pytest.mark.parametrize("model_id", [CLEAN12, CLEAN12_RFPN, LEGACY])
+@pytest.mark.parametrize("model_id", [CLEAN12, CLEAN12_RFPN, CLEAN12_TINY_RFPN, LEGACY])
 def test_rules_are_locked_to_reviewed_models_and_suppression_policy(model_id):
     descriptor = _descriptor(model_id)
     assert guidance.supports(descriptor)
@@ -49,7 +50,7 @@ def test_unreviewed_model_is_not_supported():
     assert not guidance.supports(_descriptor("resnet50_cbam_nat768"))
     cfg = guidance.config(_descriptor("resnet50_cbam_nat768"))
     assert cfg["enabled"] is False and cfg["model_id"] is None
-    assert set(cfg["model_ids"]) == {CLEAN12, CLEAN12_RFPN, LEGACY}
+    assert set(cfg["model_ids"]) == {CLEAN12, CLEAN12_RFPN, CLEAN12_TINY_RFPN, LEGACY}
     assert [t["id"] for t in cfg["urgency_levels"]] == ["green", "yellow", "orange", "red"]
 
 

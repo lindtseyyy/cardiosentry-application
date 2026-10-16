@@ -86,7 +86,8 @@ model or any policy drift. A new model needs a new review and a rule-set entry.
 
 | Model | Served labels | Suppressed |
 |---|---|---|
-| `convnext_v1_base_rfpn_clean12` (active) | `NORM, SB, STACH, LBBB, LQT, AF, AFL, 3AVB, 2AVB, 1AVB, STEMI, STE` | none |
+| `convnext_tiny_rfpn_clean12` (active) | `NORM, SB, STACH, LBBB, LQT, AF, AFL, 3AVB, 2AVB, 1AVB, STEMI, STE` | none |
+| `convnext_v1_base_rfpn_clean12` | `NORM, SB, STACH, LBBB, LQT, AF, AFL, 3AVB, 2AVB, 1AVB, STEMI, STE` | none |
 | `convnext_v1_base_clean12` | `NORM, SB, STACH, LBBB, LQT, AF, AFL, 3AVB, 2AVB, 1AVB, STEMI, STE` | none |
 | `convnextv2_tiny_v1img_v1` (earlier runs) | `NORM, AF, IAVB, LBBB, RBBB, PAC, PVC, LAFB, LAE` | `TInv, LQT, PRWP` |
 
@@ -95,6 +96,9 @@ The review covered the clean12 rules as written for `convnext_v1_base_clean12`.
 corpus, labels and order) reuses that rule set unchanged, by the developer's
 decision of 2026-10-09; the rules are per condition, so its tiers match the
 reviewed ones exactly. The checkpoint itself was not separately reviewed.
+`convnext_tiny_rfpn_clean12` (ConvNeXt-V1 Tiny + Residual FPN, same clean12
+corpus, labels and order) reuses the same rule set unchanged on the same
+basis (2026-10-15); its checkpoint was not separately reviewed either.
 
 A label shared by both model families (`AF`, `LBBB`, `NORM`; `IAVB` = `1AVB`) uses
 one rule, so the same condition always gets the same tier.

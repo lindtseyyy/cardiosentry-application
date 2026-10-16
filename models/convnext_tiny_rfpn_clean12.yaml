@@ -1,0 +1,89 @@
+schema_version: 1
+
+id: convnext_tiny_rfpn_clean12
+display_name: "CardioSentry ConvNeXt-V1 Tiny + RFPN clean12 @768x1024"
+version: convnext_tiny_v1_rfpn_clean12_colab_a100_seed42
+notes: "inference.pt from MyDrive/CardioSentry/new_runs/convnext_tiny_v1_rfpn_clean12_colab_a100_seed42
+        (config fingerprint 177e77611da26805). ConvNeXt-V1 Tiny with the
+        Residual FPN (CS_FUSION=rfpn: FPN neck over stages 2-4, 256 channels,
+        residual head; 2.13 M parameters over plain Tiny). Plain diagnostic
+        export: no ECG-gate head. Trained on the HEEDB clean12 renders with 12
+        independent sigmoid heads; the export holds the EMA weights of epoch 8,
+        the source training selected on validation (pathology macro AP 0.927;
+        test 0.923). Thresholds are the run's validation-tuned per-label F1
+        thresholds, frozen in the export.
+        Parity, 2026-10-15: on all 53 clean12 test renders in
+        ~/cardiologist_samples_clean12 (the training renderer's 1024x768
+        output), the app loader reproduces the run's stored test probabilities
+        within 1.0e-2 (<= 0.078 logit; median 2.5e-3); on the five with the
+        most mid-range scores, within 5.7e-3 (<= 0.037 logit). CPU fp32 vs
+        training BF16, the same gap as Base RFPN (8.8e-3).
+        The training sheets carry no printed header, so no header box is
+        measured. Rendered sheets are edge-to-edge and fit-and-padded (fit:
+        height_pad), not stretched."
+
+weights: weights/convnext_tiny_rfpn_clean12_inference.pt
+expected_sha256: ab1b6bf5c62c25930d01a9e670138ad1c17a58e52cbd6ed5cdfb6e48701fc2d5
+expected_protocol_fingerprint: 177e77611da26805
+
+architecture:
+  module: arch.convnext_v1_rfpn_clean12
+  registry_key: convnext_tiny_rfpn_clean12
+  pretrained: false
+  call_style: tensor
+  views: [[768, 1024]]
+
+labels: [NORM, SB, STACH, LBBB, LQT, AF, AFL, 3AVB, 2AVB, 1AVB, STEMI, STE]
+display_names:
+  NORM: "Normal ECG"
+  SB: "Sinus Bradycardia"
+  STACH: "Sinus Tachycardia"
+  LBBB: "Left Bundle Branch Block"
+  LQT: "Long QT"
+  AF: "Atrial Fibrillation"
+  AFL: "Atrial Flutter"
+  3AVB: "Third-Degree (Complete) AV Block"
+  2AVB: "Second-Degree AV Block"
+  1AVB: "First-Degree AV Block"
+  STEMI: "ST-Elevation Myocardial Infarction"
+  STE: "ST Elevation"
+
+# Frozen in inference.pt; identical to the run's validation_tuned_thresholds.json.
+thresholds:
+  source: checkpoint
+
+output:
+  suppressed_labels: []
+
+# The clean12 render: LANCZOS fit to height 768 (994 px wide), then a
+# symmetric 15 px paper-colour pad to 1024. No JPEG stage (lossless PNG).
+preprocess:
+  canvas: [1650, 1275]
+  margin_px: 18
+  input_size: [768, 1024]
+  resample: pil_lanczos
+  fit: height_pad
+  match_training_jpeg: false
+  jpeg_quality: 95
+  normalize:
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
+
+runtime:
+  device: cpu
+  dtype: float32
+  num_threads: null
+
+# The backbone's last stage feeds both the ConvNeXt head and the neck's
+# coarsest lateral, the same map plain V1 Base explains at `stages.3`
+# Probed: auto_target_layer returns backbone.norm_pre, an Identity on that
+# same stages.3 output (768 ch, 24x32 grid); the named stage is kept.
+explain:
+  enabled: true
+  target_layer: backbone.stages.3
+  header_box: null
+  header_redacted_in_training: false
+
+verify:
+  expected_scores: tests/fixtures/expected_scores_convnext_tiny_rfpn_clean12.json
+  score_tolerance: 2.0e-3

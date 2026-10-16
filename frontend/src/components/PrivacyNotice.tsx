@@ -4,8 +4,8 @@ import type { PrivacyConfig } from "../api/types";
 // (Republic Act No. 10173), its IRR, and National Privacy Commission (NPC)
 // issuances. Every factual claim here describes what the app actually does —
 // change the backend (GPS stripping, trash-not-unlink, no outbound traffic,
-// guidance answers not saved, accounts, account ids / session revocation,
-// records in a local PostgreSQL database) and this
+// guidance answers not saved, non-ECG uploads not stored, accounts, account
+// ids / session revocation, records in a local PostgreSQL database) and this
 // text must change with it, along with
 // PRIVACY_NOTICE_VERSION in backend/api/config.py.
 
@@ -54,7 +54,9 @@ export default function PrivacyNotice({ privacy }: { privacy: PrivacyConfig | nu
           <strong>The photograph of the ECG sheet</strong> you take or choose. The ECG
           tracing is health information, which RA 10173 (Sec. 3(l)) classifies as
           sensitive personal information. A printed sheet may also show the
-          patient's name, ID number, age and sex.
+          patient's name, ID number, age and sex. The app first checks that the
+          photo shows an ECG; a photo it does not recognise as one is rejected
+          straight away and <strong>not stored</strong>.
         </li>
         <li>
           <strong>Images derived from it:</strong> a cropped and straightened copy of

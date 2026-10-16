@@ -1,6 +1,6 @@
 # CardioSentry Web Application
 
-Last verified against the tree: **2026-10-14**.
+Last verified against the tree: **2026-10-15**.
 
 An **instrument, not a product**: a password-account web app that puts a real
 smartphone photograph of a real printed 12-lead ECG sheet into the CardioSentry
@@ -18,8 +18,10 @@ Full design rationale: [`CARDIOSENTRY_WEB_APP_PLAN.md`](../CARDIOSENTRY_WEB_APP_
 ```bash
 cd cardiosentry-application
 
-# 1. backend deps (system python3; includes psycopg[binary,pool])
+# 1. backend deps (system python3; includes psycopg[binary,pool]) + Tesseract,
+#    which the default ECG gate runs as a subprocess
 python3 -m pip install --user --break-system-packages -e '.[dev]'
+sudo apt install tesseract-ocr
 
 # 2. local PostgreSQL (start the existing container if stopped)
 docker start postgres-db-cardiosentry
@@ -28,8 +30,12 @@ docker start postgres-db-cardiosentry
 # Restore into an empty database: see §Security & privacy, "Legacy JSON archive".
 
 # 3. weights (gitignored training artifacts — copy from the research tree)
+cp ../prototype-results/new_runs/convnext_tiny_v1_rfpn_clean12_colab_a100_seed42/convnext_tiny_rfpn/inference.pt \
+   models/weights/convnext_tiny_rfpn_clean12_inference.pt
 cp ../prototype-results/convnext_v1_base_rfpn_clean12_colab_a100_seed42/inference.pt \
    models/weights/convnext_v1_base_rfpn_clean12_inference.pt
+cp ../prototype-results/new_runs/convnext_tiny_v1_rfpn_clean12_ecg_gate_v1_seed42/inference_with_gate.pt \
+   models/weights/convnext_tiny_rfpn_ecg_gate_v1.pt     # learned ECG gate (optional)
 cp ../prototype-results/NEW_convnext_v2_tiny_V1/best.pt models/weights/convnextv2_tiny_v1img_v1.pt
 cp ../prototype-results/hybrid_v1/resnet50_hires/weights/best.pt models/weights/resnet50_hires.pt
 cp ../prototype-results/hybrid_v1/resnet50_dual/weights/best.pt  models/weights/resnet50_dual.pt
@@ -100,6 +106,8 @@ python3 -m pip install --user --break-system-packages -e '.[dev]'
 # (--break-system-packages is for Debian/Ubuntu system Python. A virtualenv
 #  also works: python3 -m venv .venv && . .venv/bin/activate, then drop
 #  --user --break-system-packages from both commands.)
+# Tesseract for the default ECG gate (macOS: brew install tesseract)
+sudo apt install tesseract-ocr
 
 # 3. PostgreSQL 16 in Docker, published on loopback only
 PGPASS=$(openssl rand -hex 24)        # hex: no URL escaping needed
@@ -142,6 +150,7 @@ weight file:
 | descriptor | weight file |
 |---|---|
 | `convnext_v1_base_clean12` | `convnext_v1_base_clean12_best.pt` |
+| `convnext_tiny_rfpn_clean12` | `convnext_tiny_rfpn_clean12_inference.pt` |
 | `convnext_v1_base_rfpn_clean12` | `convnext_v1_base_rfpn_clean12_inference.pt` |
 | `convnextv2_tiny_v1img_v1` | `convnextv2_tiny_v1img_v1.pt` |
 | `efficientnetv2_s_cbam_nat768` | `efficientnetv2_s_cbam_nat768.pt` |
@@ -190,16 +199,31 @@ not move with these steps; copy it only if you need it as a restore source.
 ## What it does, stage by stage
 
 ```
-upload ──▶ ingest ──▶ detect ──▶ corner edit ──▶ rectify ──▶ preprocess ──▶ predict
-            (bytes,    (OpenCV     (4 draggable    (homography   (THE training   (sigmoid,
-             EXIF,     quad +      handles,        to 1650×1275,  chain: PIL      per-class
-             sha256)  fallbacks)   loupe)          +18px margin)  BICUBIC to the  thresholds)
-                                                                  model geometry,
-                                                                  q95 JPEG)
+upload ──▶ ingest ──▶ ECG gate ──▶ detect ──▶ corner edit ──▶ rectify ──▶ preprocess ──▶ predict
+            (bytes,    (not an ECG: (OpenCV     (4 draggable    (homography   (THE training   (sigmoid,
+             EXIF,     422, nothing quad +      handles,        to 1650×1275,  chain: PIL      per-class
+             sha256)   stored)      fallbacks)  loupe)          +18px margin)  BICUBIC to the  thresholds)
+                                                                             model geometry,
+                                                                             q95 JPEG)
 ```
 
-After prediction, runs from a model with reviewed rules (the two clean12
-ConvNeXt-V1 Base models and the earlier ConvNeXt-V2 V1 model) also pass their final
+The **ECG gate** (`services/ecg_gate.py`, `models/gates/*.yaml`, setting
+`CARDIOSENTRY_ECG_GATE`) checks the whole oriented upload before detection. The
+default, `ocr_lead_labels_v1`, runs Tesseract over the photo after removing
+everything that is not character-sized and accepts it when at least 4 of the
+printed lead labels aVR, aVL, aVF, V1–V6 are read (~2–4 s; EEG printouts and
+other non-ECGs read at most 2). Otherwise the upload returns `422 NOT_AN_ECG`,
+its folder is removed and no record is written, so the corner editor and the
+model are never reached; the screen tells the user to upload an ECG with its
+lead labels visible, or to move closer if it is one. Accepted captures store
+the labels read in `record.ecg_gate`. Labels must be legible, so a sheet filling
+~10% of the frame (test fixture `photo_small.jpg`) is rejected. Setting
+`CARDIOSENTRY_ECG_GATE=convnext_tiny_rfpn_ecg_gate_v1` switches to the learned
+gate (a head on a frozen clean12 ConvNeXt-V1 Tiny + RFPN; it lets EEG printouts
+through). `models/README.md` §ECG gate has the measurements.
+
+After prediction, runs from a model with reviewed rules (the clean12
+ConvNeXt-V1 models and the earlier ConvNeXt-V2 V1 model) also pass their final
 served positives into a versioned **Urgency and Recommended Next Steps**
 decision-support layer with four tiers of increasing urgency: **Green**
 (read as Normal, no extra action from this result), **Yellow**
@@ -342,7 +366,8 @@ python3 scripts/export_dataset.py --out captures_export.csv
 
 | id | checkpoint | input (h×w) | call style | purpose |
 |---|---|---|---|---|
-| `convnext_v1_base_rfpn_clean12` *(active)* | convnext_v1_rfpn_clean12 | 768×1024 | `tensor` | ConvNeXt-V1 Base + Residual FPN (`CS_FUSION=rfpn`) trained on the HEEDB clean12 renders; 12 heads, all served. Test pathology macro AP 0.923 |
+| `convnext_tiny_rfpn_clean12` *(active)* | convnext_v1_rfpn_clean12 | 768×1024 | `tensor` | ConvNeXt-V1 Tiny + Residual FPN (`CS_FUSION=rfpn`) trained on the HEEDB clean12 renders; 12 heads, all served, no gate head. Test pathology macro AP 0.923 |
+| `convnext_v1_base_rfpn_clean12` | convnext_v1_rfpn_clean12 | 768×1024 | `tensor` | ConvNeXt-V1 Base + Residual FPN (`CS_FUSION=rfpn`) trained on the HEEDB clean12 renders; 12 heads, all served. Test pathology macro AP 0.923 |
 | `convnext_v1_base_clean12` | convnext_v1_clean12 | 768×1024 | `tensor` | the same run recipe without the FPN neck (plain V1 Base); 12 heads, all served |
 | `convnextv2_tiny_v1img_v1` | convnextv2_v1img | 768×1024 | `tensor` | ConvNeXt-V2 Tiny trained on the clean-only V1 image corpus. Twelve checkpoint heads; nine currently served, with TInv, LQT, and PRWP suppressed reversibly |
 | `efficientnetv2_s_nat768` | baselines_v2 | 768×1024 | `tensor` | round-3 **plain baseline** — the unmodified backbone at the sheet's native aspect. Val macro-AUPRC 0.9501 |
@@ -370,6 +395,10 @@ calibration caveat as the earlier models. The three older round-3 descriptors st
 protocol fingerprint `36988c5e0ba5d72d` and remain available for controlled
 comparison; their documented header-redaction gap is covered in
 `models/README.md`.
+
+The ECG gates (`ocr_lead_labels_v1`, default, and `convnext_tiny_rfpn_ecg_gate_v1`)
+are not diagnostic models and are not listed by `/api/models`; see
+`models/README.md` §ECG gate.
 
 ## Security & privacy (read before serving)
 
@@ -490,7 +519,7 @@ accepted. Each upload records the accepted version in
 the capture record's `session.privacy_notice_ack` as the proof of consent
 (`null` = an API or script caller that never saw it).
 
-The current `PRIVACY_NOTICE_VERSION` is `2026-10-08.3`; the notice also describes
+The current `PRIVACY_NOTICE_VERSION` is `2026-10-15.1`; the notice also describes
 local PostgreSQL records, image files, credential hashes, sign-in sessions,
 permanent account ids, capture ownership and signing out other devices when a
 password changes.

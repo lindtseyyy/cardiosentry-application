@@ -9,7 +9,8 @@ changes.
 
 ```
 models/
-├── active.yaml -> convnext_v1_base_rfpn_clean12.yaml  # which model the app serves
+├── active.yaml -> convnext_tiny_rfpn_clean12.yaml  # which model the app serves
+├── convnext_tiny_rfpn_clean12.yaml        # HEEDB clean12 ConvNeXt-V1 Tiny + RFPN, 12 heads
 ├── convnext_v1_base_rfpn_clean12.yaml     # HEEDB clean12 ConvNeXt-V1 Base + RFPN, 12 heads
 ├── convnext_v1_base_clean12.yaml          # HEEDB clean12 ConvNeXt-V1 Base, 12 heads
 ├── convnextv2_tiny_v1img_v1.yaml          # V1 clean-image model, 12 heads / 9 served
@@ -19,8 +20,13 @@ models/
 ├── resnet50_hires.yaml                    # round-2 control, 768px square
 ├── resnet50_dual.yaml                     # round-2 dual-stream 384+768
 ├── resnet50_v1.yaml                       # round-1, 384px, tensor call style
+├── gates/                                 # ECG / not-ECG gates (§ECG gate), not diagnostic models
+│   ├── ocr_lead_labels_v1.yaml            # default: OCR of the printed lead labels
+│   └── convnext_tiny_rfpn_ecg_gate_v1.yaml  # learned gate head (alternative)
 └── weights/
+    ├── convnext_tiny_rfpn_clean12_inference.pt  # 120 MB inference export
     ├── convnext_v1_base_rfpn_clean12_inference.pt  # 360 MB inference export
+    ├── convnext_tiny_rfpn_ecg_gate_v1.pt  # 121 MB: Tiny RFPN export + gate head
     ├── convnext_v1_base_clean12_best.pt   # 1.4 GB full training checkpoint
     ├── convnextv2_tiny_v1img_v1.pt
     ├── efficientnetv2_s_nat768.pt
@@ -36,6 +42,10 @@ models/
 The checkpoints are the training outputs in the research tree; copy them here:
 
 ```bash
+# clean12 ConvNeXt-V1 Tiny + RFPN: inference.pt of MyDrive/CardioSentry/new_runs/
+#   convnext_tiny_v1_rfpn_clean12_colab_a100_seed42
+cp ../prototype-results/new_runs/convnext_tiny_v1_rfpn_clean12_colab_a100_seed42/convnext_tiny_rfpn/inference.pt \
+   weights/convnext_tiny_rfpn_clean12_inference.pt
 # clean12 ConvNeXt-V1 Base + RFPN: inference.pt of MyDrive/CardioSentry/new_runs/
 #   convnext_v1_base_rfpn_clean12_colab_a100_seed42
 cp ../prototype-results/convnext_v1_base_rfpn_clean12_colab_a100_seed42/inference.pt \
@@ -127,6 +137,87 @@ example. Key fields:
   every attribution map is scored against. `header_redacted_in_training` says
   whether this run trained with that block painted out; see below for why that
   changes how a header-heavy map should be read.
+
+## ECG gate
+
+`gates/<id>.yaml` (schema: `backend/schemas/ecg_gate.py`) describes the gate run
+on every upload before a capture is created (`services/ecg_gate.py`). Setting
+`CARDIOSENTRY_ECG_GATE` names the id; **that one setting switches gates**
+(default `ocr_lead_labels_v1`; empty = off). The descriptor's `kind` picks the
+implementation. `registry.discover` only scans `models/*.yaml`, so gates never
+appear in `/api/models` and cannot be made active. Rejected = `422 NOT_AN_ECG`,
+folder removed, no record; accepted captures store `record.ecg_gate`.
+
+| id | `kind` | passes | cost |
+|---|---|---|---|
+| `ocr_lead_labels_v1` *(default)* | `ocr_lead_labels` | ≥ 4 of the 9 labels aVR, aVL, aVF, V1–V6 read | Tesseract binary; ~2–4 s accept, ≤ ~7 s reject |
+| `convnext_tiny_rfpn_ecg_gate_v1` | `learned` | P(ECG) ≥ 0.5 | 121 MB `.pt`, ~0.1 GB RAM, ~3 s |
+
+### `ocr_lead_labels_v1` (services/ecg_gate_ocr.py)
+
+Replaced the learned gate as default on 2026-10-15 because the learned gate
+accepted EEG printouts (grid + traces, no lead labels).
+
+- **Engine:** the `tesseract` CLI (5.3.4 here; `apt install tesseract-ocr`),
+  called directly with `OMP_THREAD_LIMIT=1` — no Python OCR package. Startup
+  fails if the binary is missing or its warm-up call fails.
+- **Chain:** resize the oriented upload to 2400 px max side (small images are
+  upscaled; the labels need ~20 px height), then each `cleanup` pass keeps only
+  character-sized ink blobs (ink = darker than 0.55 × local paper brightness),
+  so traces, grid and shading drop out; Tesseract `--psm 11` with
+  `char_whitelist` reads what is left. Pass 1 uses `max(R,G,B)` (a red/pink grid
+  vanishes); pass 2 uses `min(R,G,B)` + grid-line removal for black-grid scans.
+  Both start at once; pass 2 is only waited for when pass 1 falls short.
+- **Rule:** `score` = distinct `counted_leads` read, accepted at
+  `score >= min_leads`. I, II and III are read and reported in `leads_found` but
+  not counted: "I" was read on 65 of 131 non-ECG images.
+- **Why 4, not 9 (2026-10-15, ecg_gate_v1 test split + 30 synthetic EEG
+  sheets; dataset images are ≤ 1600 px, so phone photos read better):**
+
+  | images | n | median counted | max counted | accepted at 4 |
+  |---|---|---|---|---|
+  | clean12 renders | 25 | 9 | 9 | 25 |
+  | MEETI | 25 | 8 | 9 | 25 |
+  | ECG-Image-Database D1 | 25 | 7 | 9 | 19 |
+  | ECG-Image-Database D0 (black-grid scans) | 25 | 2 | 9 | 8 |
+  | ECG-Image-Database D2 (limb-lead-only pages) | 25 | 3 | 6 | 3 |
+  | non-ECG: COCO, RVL-CDIP, ChartQA, CORD, look-alikes | 100 | 0 | 2 | 0 |
+  | synthetic EEG (10-20 montages, half photographed) | 30 | 0 | 1 | 0 |
+
+  Non-ECG never read more than 2, so 4 leaves a margin of 2. At 9, only 29% of
+  the ECGs passed. App fixtures: `corpus_sheet` 9, `photo_clean` 7, `photo_dark`
+  8, `photo_tilted` 8 accepted; `photo_small` (sheet ~10% of the frame) and
+  `no_paper` 0, rejected.
+- **Known misses:** black-grid scans whose labels touch the grid, pages that
+  print only some leads, far-away photos (labels too small to read).
+
+### `convnext_tiny_rfpn_ecg_gate_v1` (learned)
+
+- **Weights:** `inference_with_gate.pt` from
+  `prototype-results/new_runs/convnext_tiny_v1_rfpn_clean12_ecg_gate_v1_seed42/`
+  — the clean12 ConvNeXt-V1 Tiny + RFPN export (fingerprint `177e77611da26805`,
+  `model` untouched) plus `gate_head`, `gate_head_spec` and `gate_threshold`.
+  Both parts load `strict=True`; `expected_sha256` and
+  `expected_protocol_fingerprint` pin the file like a model descriptor. A
+  separate file from the diagnostic `convnext_tiny_rfpn_clean12` weights.
+- **Architecture:** `arch.convnext_v1_rfpn_clean12` / `convnext_tiny_rfpn_clean12`.
+  The gate reads the pooled stage-4 pre-logits (768) + pooled FPN P3–P5 (3×256);
+  the 12 diagnostic logits are not computed.
+- **Input:** the oriented upload, LANCZOS thumbnail to 1600 px, JPEG q95 (the
+  gate dataset's build), then `fit_height_pad` to 768×1024 — the run's `fit`
+  geometry. Its `rectify` geometry is not served.
+- **Threshold:** `threshold.source: checkpoint` reads `gate_threshold` (0.5). The
+  run's recall-0.99 rule chose 0.9746, which rejected 8 real-ECG validation rows
+  while every non-ECG scored ≤ 0.061; 0.5 has no validation/test errors.
+- **Parity (2026-10-15):** on 20 clean12 renders, including the 4 lowest-scoring,
+  the app reproduces the run's stored `fit` probabilities within 9.3e-4 (CPU fp32
+  vs the run's GPU eval). Test fixtures: every `photo_*` except `photo_small.jpg`
+  scores 1.0; `photo_small.jpg` (sheet ~10% of the frame) 0.016 and
+  `no_paper.jpg` 1e-5 are rejected.
+- **Known miss:** EEG printouts pass (reported 2026-10-15; its training set had
+  no EEG negatives).
+- **Not measured:** real-world non-ECG phone photos; the gate dataset's negatives
+  are COCO, RVL-CDIP, ChartQA, CORD and synthetic look-alikes.
 
 ## The header is not redacted at serving time
 

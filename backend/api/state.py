@@ -10,6 +10,7 @@ from psycopg_pool import ConnectionPool
 
 from backend.services import db
 from backend.services.accounts import AccountStore
+from backend.services.ecg_gate import EcgGate, load_gate
 from backend.services.records import RecordStore
 from backend.services.registry import LoadedDescriptor, discover, active
 from backend.services.runner import LoadedModel, load_model
@@ -26,6 +27,7 @@ class AppState:
     started_monotonic: float = field(default_factory=time.monotonic)
     descriptors: dict[str, LoadedDescriptor] = field(default_factory=dict)
     active_model: LoadedModel | None = None
+    ecg_gate: EcgGate | None = None
     _models_cache: dict[str, LoadedModel] = field(default_factory=dict)
     _load_lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -34,6 +36,8 @@ class AppState:
         active_ld = active(self.descriptors)
         self.active_model = load_model(active_ld)
         self._models_cache[active_ld.id] = self.active_model
+        if settings.ecg_gate:
+            self.ecg_gate = load_gate(settings.ecg_gate)
 
     def model(self, model_id: str | None) -> LoadedModel:
         """The active model, or another discovered model (lazily loaded)."""

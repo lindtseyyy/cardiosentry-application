@@ -20,7 +20,7 @@ APP_VERSION = "0.1.0"
 # Bump whenever the Data Privacy Notice text (frontend PrivacyNotice.tsx)
 # materially changes: the frontend re-asks for acknowledgment on a new version,
 # and each capture records the version that was acknowledged.
-PRIVACY_NOTICE_VERSION = "2026-10-08.3"
+PRIVACY_NOTICE_VERSION = "2026-10-15.1"
 
 
 @router.get("/config")

@@ -34,8 +34,33 @@ CORPUS_SHEET = (REPO_ROOT / "dataset-combination-code/ecg_dataset_pipeline"
 # fallback for a descriptor that pins nothing — is a copy of the ACTIVE model's,
 # so regenerating fixtures can never leave the self-check comparing the served
 # model against another run's numbers.
-ACTIVE_MODEL = "convnext_v1_base_rfpn_clean12"
+ACTIVE_MODEL = "convnext_tiny_rfpn_clean12"
 EXPECTED_SCORES = {
+    "convnext_tiny_rfpn_clean12": {
+        "model": "convnext_tiny_rfpn_clean12",
+        "image": "corpus_sheet.jpg",
+        "source": ("CardioSentry serving path, CPU float32 (fit=height_pad); the "
+                   "run never evaluated this older-corpus sheet. Weights/loader "
+                   "parity against the run's own stored test probabilities was "
+                   "checked separately on all 53 clean12 test renders in "
+                   "~/cardiologist_samples_clean12 (max |d| 1.0e-2, <= 0.078 "
+                   "logit; the five with the most mid-range scores: max |d| "
+                   "5.7e-3, <= 0.037 logit; training evaluated in BF16)."),
+        "scores": {
+            "NORM": 2.5432473194086924e-05,
+            "SB": 1.5247935152729042e-05,
+            "STACH": 0.0007053787121549249,
+            "LBBB": 0.0008890629396773875,
+            "LQT": 0.7183403968811035,
+            "AF": 0.9975606203079224,
+            "AFL": 0.010692658834159374,
+            "3AVB": 0.0004786532372236252,
+            "2AVB": 0.0014533124631270766,
+            "1AVB": 0.00010518686030991375,
+            "STEMI": 0.0013321280712261796,
+            "STE": 0.0033347129356116056,
+        },
+    },
     "convnext_v1_base_rfpn_clean12": {
         "model": "convnext_v1_base_rfpn_clean12",
         "image": "corpus_sheet.jpg",
