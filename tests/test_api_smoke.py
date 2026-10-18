@@ -4,7 +4,7 @@ upload -> detect -> rectify -> predict -> history -> annotate -> trash
 """
 from __future__ import annotations
 
-import shutil
+import json
 from secrets import token_hex
 
 import pytest
@@ -172,15 +172,11 @@ def test_full_staged_flow(client, fixtures):
     assert detail["annotation"]["reference_labels"]["AF"] is True
 
     # 6) trash (never unlink)
-    assert not (storage.capture_dir(cid) / "capture.json").exists()
+    assert (storage.capture_dir(cid) / "capture.json").is_file()
     d = client.delete(f"/api/captures/{cid}")
     assert d.status_code == 200
-    with client.app.state.csd.db.connection() as conn:
-        assert conn.execute(
-            "SELECT trashed_utc IS NOT NULL FROM captures WHERE capture_id=%s",
-            (cid,),
-        ).fetchone()[0] is True
-    assert (settings.data_dir / "_trash" / cid[:10] / cid).is_dir()
+    assert client.app.state.csd.records.get_capture(cid) is None
+    assert (settings.data_dir / "_trash" / cid[:10] / cid / "capture.json").is_file()
     assert client.get(f"/api/captures/{cid}").status_code == 404
 
 
@@ -323,17 +319,11 @@ def test_register_login_logout(anon_client, client):
     assert me.status_code == 200, me.text
     assert me.json() == {"username": username}
 
-    with client.app.state.csd.db.connection() as conn:
-        accounts_text, sessions_text = conn.execute(
-            "SELECT (SELECT string_agg(t::text, '') FROM accounts AS t), "
-            "(SELECT string_agg(t::text, '') FROM sessions AS t)",
-        ).fetchone()
-        password_hash = conn.execute(
-            "SELECT password_hash FROM accounts WHERE username=%s", (username,),
-        ).fetchone()[0]
+    from backend.settings import settings
+    accounts_text = (settings.data_dir / "accounts.json").read_text(encoding="utf-8")
     assert password not in accounts_text
-    assert password not in sessions_text
-    assert password_hash.startswith("pbkdf2_sha256$")
+    accounts = json.loads(accounts_text)
+    assert accounts["users"][username]["password_hash"].startswith("pbkdf2_sha256$")
 
 
 def test_default_admin_account_is_seeded(anon_client):
@@ -384,15 +374,12 @@ def test_legacy_capture_without_owner_belongs_to_admin(client, fixtures):
     from backend.services import storage
 
     capture = _upload_photo(client, fixtures, "photo_clean.jpg")
-    source_id = capture["capture_id"]
-    cid = f"{source_id[:-6]}{token_hex(3)}"
-    source_dir = storage.capture_dir(source_id)
-    shutil.copytree(source_dir, source_dir.with_name(cid))
+    cid = capture["capture_id"]
     records = client.app.state.csd.records
-    record = records.get_capture(source_id)
-    record["capture_id"] = cid
+    record_path = storage.capture_dir(cid) / "capture.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
     assert record.pop("owner") == "admin"
-    assert records.import_capture(record, [], [])
+    storage.atomic_write_json(record_path, record)
 
     r = client.get(f"/api/captures/{cid}")
     assert r.status_code == 200, r.text
@@ -464,14 +451,13 @@ def test_update_account_rename_keeps_captures(client, fixtures):
         assert r.json()["total"] == 1
         assert [item["capture_id"] for item in r.json()["captures"]] == [capture_id]
 
+        from backend.settings import settings
         assert records.get_capture(capture_id)["owner"] == a
-        with client.app.state.csd.db.connection() as conn:
-            assert conn.execute(
-                "SELECT account_id FROM accounts WHERE username=%s", (b,),
-            ).fetchone()[0] == a
-            assert conn.execute(
-                "SELECT 1 FROM accounts WHERE username=%s", (a,),
-            ).fetchone() is None
+        accounts = json.loads(
+            (settings.data_dir / "accounts.json").read_text(encoding="utf-8"),
+        )
+        assert accounts["users"][b]["account_id"] == a
+        assert a not in accounts["users"]
         for route, status, code in (
             ("login", 401, "INVALID_CREDENTIALS"),
             ("register", 409, "USERNAME_TAKEN"),
@@ -543,16 +529,10 @@ def test_password_change_revokes_other_sessions(client):
         )
         assert r.status_code == 200, r.text
         assert r.json() == {"username": username}
-        with client.app.state.csd.db.connection() as conn:
-            accounts_text, sessions_text = conn.execute(
-                "SELECT (SELECT string_agg(t::text, '') FROM accounts AS t), "
-                "(SELECT string_agg(t::text, '') FROM sessions AS t)",
-            ).fetchone()
-            password_hash = conn.execute(
-                "SELECT password_hash FROM accounts WHERE username=%s", (username,),
-            ).fetchone()[0]
-        assert old_password not in accounts_text and old_password not in sessions_text
-        assert new_password not in accounts_text and new_password not in sessions_text
+        from backend.settings import settings
+        accounts_text = (settings.data_dir / "accounts.json").read_text(encoding="utf-8")
+        assert old_password not in accounts_text and new_password not in accounts_text
+        password_hash = json.loads(accounts_text)["users"][username]["password_hash"]
         assert password_hash.startswith("pbkdf2_sha256$")
     finally:
         c1.close()

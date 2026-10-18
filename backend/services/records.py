@@ -1,277 +1,211 @@
-"""PostgreSQL capture, prediction and explanation records; files stay on disk."""
+"""Filesystem JSON capture, prediction and explanation records (plan §2.2).
+
+Layout under settings.data_dir (the pre-PostgreSQL format, which
+scripts/import_filesystem.py in the PostgreSQL build imports unchanged):
+
+    <date>/<capture_id>/capture.json
+    <date>/<capture_id>/predictions/<run_id>.json
+    <date>/<capture_id>/explain/<explain_id>/record.json
+
+Deleting a capture moves its whole folder, records included, to _trash/, so
+reads never see it again. The server is single-process (workers=1), so one
+in-process lock serialises every read-modify-write of capture.json.
+"""
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Callable
-from datetime import datetime
-from functools import partial
 from pathlib import Path
-
-from psycopg import Connection
-from psycopg.types.json import Jsonb
-from psycopg_pool import ConnectionPool
 
 from backend.schemas.capture import CaptureRecord
 from backend.services import storage
 from backend.services.accounts import owner_of
+from backend.settings import settings
 
 
-def _jsonb(record: dict) -> Jsonb:
-    # PostgreSQL JSONB rejects the NUL padding found in phone EXIF strings.
-    def clean(value: object) -> object:
-        if isinstance(value, str):
-            return value.replace("\x00", "")
-        if isinstance(value, dict):
-            return {clean(key): clean(item) for key, item in value.items()}
-        if isinstance(value, (list, tuple)):
-            return [clean(item) for item in value]
-        return value
-
-    return Jsonb(clean(record), dumps=partial(json.dumps, allow_nan=False))
+def _read_json(path: Path) -> dict | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
 
 
-def _created_utc(record: dict) -> datetime:
-    created = datetime.fromisoformat(record["created_utc"])
-    if created.utcoffset() is None:
-        raise ValueError("Capture created_utc must be timezone-aware.")
-    return created
+def _capture_path(capture_id: str) -> Path | None:
+    try:
+        return storage.capture_dir(capture_id) / "capture.json"
+    except KeyError:
+        return None
+
+
+def _run_path(capture_id: str, run_id: str) -> Path | None:
+    # The id shape is the path-traversal gate for client-supplied run ids.
+    if not storage.PREDICTION_ID_RE.fullmatch(run_id):
+        return None
+    try:
+        return storage.capture_dir(capture_id) / "predictions" / f"{run_id}.json"
+    except KeyError:
+        return None
+
+
+def _explain_path(capture_id: str, explain_id: str) -> Path | None:
+    try:
+        return storage.explain_dir(capture_id, explain_id) / "record.json"
+    except KeyError:
+        return None
 
 
 class RecordStore:
-    def __init__(self, pool: ConnectionPool) -> None:
-        self.pool = pool
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
 
-    def _locked_capture(self, conn: Connection, capture_id: str) -> dict:
-        row = conn.execute(
-            "SELECT record FROM captures "
-            "WHERE capture_id=%s AND trashed_utc IS NULL FOR UPDATE",
-            (capture_id,),
-        ).fetchone()
-        if row is None:
-            raise KeyError(capture_id)
-        return row[0]
-
-    def _save_capture(self, conn: Connection, capture_id: str, record: dict) -> dict:
-        payload = _jsonb(CaptureRecord.model_validate(record).model_dump(mode="json"))
-        stored = payload.obj
-        conn.execute(
-            "UPDATE captures SET record=%s, owner_id=%s, created_utc=%s "
-            "WHERE capture_id=%s",
-            (payload, owner_of(stored), _created_utc(stored), capture_id),
-        )
+    def _save_capture(self, path: Path, record: dict) -> dict:
+        stored = CaptureRecord.model_validate(record).model_dump(mode="json")
+        storage.atomic_write_json(path, stored)
         return stored
 
+    def _locked_update(self, capture_id: str, mutate: Callable[[dict], None]) -> dict:
+        path = _capture_path(capture_id)
+        record = _read_json(path) if path is not None else None
+        if record is None:
+            raise KeyError(capture_id)
+        mutate(record)
+        return self._save_capture(path, record)
+
     def create_capture(self, record: CaptureRecord) -> None:
-        payload = _jsonb(record.model_dump(mode="json"))
-        stored = payload.obj
-        with self.pool.connection() as conn:
-            conn.execute(
-                "INSERT INTO captures (capture_id, owner_id, created_utc, record) "
-                "VALUES (%s, %s, %s, %s)",
-                (stored["capture_id"], owner_of(stored), _created_utc(stored), payload),
-            )
+        path = storage.capture_dir(record.capture_id) / "capture.json"
+        with self._lock:
+            if path.exists():
+                raise FileExistsError(record.capture_id)
+            storage.atomic_write_json(path, record.model_dump(mode="json"))
 
     def get_capture(self, capture_id: str) -> dict | None:
-        with self.pool.connection() as conn:
-            row = conn.execute(
-                "SELECT record FROM captures "
-                "WHERE capture_id=%s AND trashed_utc IS NULL",
-                (capture_id,),
-            ).fetchone()
-        return row[0] if row is not None else None
+        path = _capture_path(capture_id)
+        return _read_json(path) if path is not None else None
 
     def owned_capture(self, capture_id: str, account_id: str) -> dict | None:
-        with self.pool.connection() as conn:
-            row = conn.execute(
-                "SELECT record FROM captures "
-                "WHERE capture_id=%s AND owner_id=%s AND trashed_utc IS NULL",
-                (capture_id, account_id),
-            ).fetchone()
-        return row[0] if row is not None else None
+        record = self.get_capture(capture_id)
+        if record is None or owner_of(record) != account_id:
+            return None
+        return record
 
     def update_capture(self, capture_id: str, mutate: Callable[[dict], None]) -> dict:
-        with self.pool.connection() as conn:
-            record = self._locked_capture(conn, capture_id)
-            mutate(record)
-            return self._save_capture(conn, capture_id, record)
+        with self._lock:
+            return self._locked_update(capture_id, mutate)
 
     def trash_capture(self, capture_id: str) -> Path:
-        with self.pool.connection() as conn:
-            updated = conn.execute(
-                "UPDATE captures SET trashed_utc=now() "
-                "WHERE capture_id=%s AND trashed_utc IS NULL",
-                (capture_id,),
-            )
-            if updated.rowcount == 0:
+        with self._lock:
+            if _capture_path(capture_id) is None:
                 raise KeyError(capture_id)
             return storage.trash_capture(capture_id)
+
+    def _iter_records(self):
+        """Live capture records, newest first (ids sort chronologically)."""
+        if not settings.data_dir.is_dir():
+            return
+        paths = sorted(
+            (p for p in settings.data_dir.glob("[0-9]*/*/capture.json")
+             if storage.CAPTURE_ID_RE.fullmatch(p.parent.name)),
+            key=lambda p: p.parent.name, reverse=True)
+        for path in paths:
+            record = _read_json(path)
+            if record is not None:
+                yield record
 
     def list_owned(
         self, account_id: str, limit: int, offset: int,
     ) -> tuple[int, list[tuple[dict, list[dict]]]]:
-        with self.pool.connection() as conn:
-            total = conn.execute(
-                "SELECT count(*) FROM captures "
-                "WHERE owner_id=%s AND trashed_utc IS NULL",
-                (account_id,),
-            ).fetchone()[0]
-            page = conn.execute(
-                "SELECT capture_id, record FROM captures "
-                "WHERE owner_id=%s AND trashed_utc IS NULL "
-                "ORDER BY capture_id DESC LIMIT %s OFFSET %s",
-                (account_id, limit, offset),
-            ).fetchall()
-            if not page:
-                return total, []
-            runs = {
-                (cid, run_id): run
-                for cid, run_id, run in conn.execute(
-                    "SELECT p.capture_id, p.run_id, p.record FROM prediction_runs AS p "
-                    "JOIN captures AS c USING (capture_id) "
-                    "WHERE p.capture_id = ANY(%s) AND c.trashed_utc IS NULL",
-                    ([cid for cid, _ in page],),
-                ).fetchall()
-            }
-        return total, [
-            (record, [runs[(cid, run_id)] for run_id in record.get("predictions", [])
-                      if (cid, run_id) in runs])
-            for cid, record in page
+        owned = [record for record in self._iter_records()
+                 if owner_of(record) == account_id]
+        return len(owned), [
+            (record, self.prediction_runs(record["capture_id"],
+                                          record.get("predictions", [])))
+            for record in owned[offset:offset + limit]
         ]
 
     def all_captures(self) -> list[dict]:
-        with self.pool.connection() as conn:
-            rows = conn.execute(
-                "SELECT record FROM captures WHERE trashed_utc IS NULL "
-                "ORDER BY capture_id DESC",
-            ).fetchall()
-        return [row[0] for row in rows]
-
-    def has_captures(self) -> bool:
-        with self.pool.connection() as conn:
-            return conn.execute("SELECT EXISTS (SELECT 1 FROM captures)").fetchone()[0]
+        return list(self._iter_records())
 
     def add_prediction(self, capture_id: str, run: dict) -> None:
-        payload = _jsonb(run)
-        run_id = payload.obj["run_id"]
-        with self.pool.connection() as conn:
-            # Lock before the child insert: FK key-share locks can deadlock on upgrade.
-            record = self._locked_capture(conn, capture_id)
-            conn.execute(
-                "INSERT INTO prediction_runs (capture_id, run_id, record) "
-                "VALUES (%s, %s, %s)",
-                (capture_id, run_id, payload),
-            )
-            record["predictions"] = list(dict.fromkeys(
-                record.get("predictions", []) + [run_id]))
-            self._save_capture(conn, capture_id, record)
+        run_id = run["run_id"]
+        with self._lock:
+            path = _run_path(capture_id, run_id)
+            if path is None:
+                raise KeyError(capture_id)
+            if path.exists():
+                raise FileExistsError(run_id)
+            storage.atomic_write_json(path, run)
+
+            def mutate(record: dict) -> None:
+                record["predictions"] = list(dict.fromkeys(
+                    record.get("predictions", []) + [run_id]))
+
+            try:
+                self._locked_update(capture_id, mutate)
+            except Exception:
+                path.unlink(missing_ok=True)
+                raise
 
     def prediction_runs(self, capture_id: str, run_ids: list[str]) -> list[dict]:
-        if not run_ids:
-            return []
-        with self.pool.connection() as conn:
-            rows = conn.execute(
-                "SELECT p.run_id, p.record FROM prediction_runs AS p "
-                "JOIN captures AS c USING (capture_id) "
-                "WHERE p.capture_id=%s AND p.run_id = ANY(%s) "
-                "AND c.trashed_utc IS NULL",
-                (capture_id, run_ids),
-            ).fetchall()
-        runs = dict(rows)
-        return [runs[run_id] for run_id in run_ids if run_id in runs]
+        runs = []
+        for run_id in dict.fromkeys(run_ids):
+            run = self.prediction_run(capture_id, run_id)
+            if run is not None:
+                runs.append(run)
+        return runs
 
     def prediction_run(self, capture_id: str, run_id: str) -> dict | None:
-        with self.pool.connection() as conn:
-            row = conn.execute(
-                "SELECT p.record FROM prediction_runs AS p "
-                "JOIN captures AS c USING (capture_id) "
-                "WHERE p.capture_id=%s AND p.run_id=%s AND c.trashed_utc IS NULL",
-                (capture_id, run_id),
-            ).fetchone()
-        return row[0] if row is not None else None
+        path = _run_path(capture_id, run_id)
+        return _read_json(path) if path is not None else None
 
     def add_explanation(self, capture_id: str, record: dict) -> None:
-        payload = _jsonb(record)
-        explain_id = payload.obj["explain_id"]
-        with self.pool.connection() as conn:
-            capture = self._locked_capture(conn, capture_id)
-            conn.execute(
-                "INSERT INTO explain_runs (capture_id, explain_id, record) "
-                "VALUES (%s, %s, %s)",
-                (capture_id, explain_id, payload),
-            )
-            capture["explanations"] = list(dict.fromkeys(
-                capture.get("explanations", []) + [explain_id]))
-            self._save_capture(conn, capture_id, capture)
+        explain_id = record["explain_id"]
+        if not storage.EXPLAIN_ID_RE.fullmatch(explain_id):
+            raise KeyError(f"malformed explain_id: {explain_id!r}")
+        with self._lock:
+            # The explain route normally created this folder and removes it on failure.
+            path = storage.capture_dir(capture_id) / "explain" / explain_id / "record.json"
+            storage.atomic_write_json(path, record)
+
+            def mutate(capture: dict) -> None:
+                capture["explanations"] = list(dict.fromkeys(
+                    capture.get("explanations", []) + [explain_id]))
+
+            self._locked_update(capture_id, mutate)
+
+    def _explain_paths(self, capture_id: str) -> list[Path]:
+        try:
+            explain_root = storage.capture_dir(capture_id) / "explain"
+        except KeyError:
+            return []
+        return sorted(
+            (p for p in explain_root.glob("*/record.json")
+             if storage.EXPLAIN_ID_RE.fullmatch(p.parent.name)),
+            key=lambda p: p.parent.name, reverse=True)
 
     def explain_records(self, capture_id: str) -> list[dict]:
-        with self.pool.connection() as conn:
-            rows = conn.execute(
-                "SELECT e.record FROM explain_runs AS e "
-                "JOIN captures AS c USING (capture_id) "
-                "WHERE e.capture_id=%s AND c.trashed_utc IS NULL "
-                "ORDER BY e.explain_id DESC",
-                (capture_id,),
-            ).fetchall()
-        return [row[0] for row in rows]
+        records = (_read_json(path) for path in self._explain_paths(capture_id))
+        return [record for record in records if record is not None]
 
     def explain_record(self, capture_id: str, explain_id: str) -> dict | None:
-        with self.pool.connection() as conn:
-            row = conn.execute(
-                "SELECT e.record FROM explain_runs AS e "
-                "JOIN captures AS c USING (capture_id) "
-                "WHERE e.capture_id=%s AND e.explain_id=%s AND c.trashed_utc IS NULL",
-                (capture_id, explain_id),
-            ).fetchone()
-        return row[0] if row is not None else None
+        path = _explain_path(capture_id, explain_id)
+        return _read_json(path) if path is not None else None
 
     def count_explanations(self, capture_id: str) -> int:
-        with self.pool.connection() as conn:
-            return conn.execute(
-                "SELECT count(*) FROM explain_runs AS e "
-                "JOIN captures AS c USING (capture_id) "
-                "WHERE e.capture_id=%s AND c.trashed_utc IS NULL",
-                (capture_id,),
-            ).fetchone()[0]
+        return len(self._explain_paths(capture_id))
 
     def delete_explanation(self, capture_id: str, explain_id: str) -> bool:
-        with self.pool.connection() as conn:
-            capture = self._locked_capture(conn, capture_id)
-            deleted = conn.execute(
-                "DELETE FROM explain_runs WHERE capture_id=%s AND explain_id=%s",
-                (capture_id, explain_id),
-            ).rowcount > 0
-            capture["explanations"] = [
-                xid for xid in capture.get("explanations", []) if xid != explain_id
-            ]
-            self._save_capture(conn, capture_id, capture)
-            return deleted
+        """Drop the record and its capture.json entry; the route removes the files."""
+        with self._lock:
+            path = _explain_path(capture_id, explain_id)
+            deleted = path is not None and path.is_file()
+            if deleted:
+                path.unlink()
 
-    def import_capture(
-        self, record: dict, runs: list[dict], explanations: list[dict],
-    ) -> bool:
-        payload = _jsonb(record)
-        stored = payload.obj
-        capture_id = stored["capture_id"]
-        with self.pool.connection() as conn:
-            inserted = conn.execute(
-                "INSERT INTO captures (capture_id, owner_id, created_utc, record) "
-                "VALUES (%s, %s, %s, %s) ON CONFLICT (capture_id) DO NOTHING",
-                (capture_id, owner_of(stored), _created_utc(stored), payload),
-            )
-            if inserted.rowcount == 0:
-                return False
-            for run in runs:
-                run_payload = _jsonb(run)
-                conn.execute(
-                    "INSERT INTO prediction_runs (capture_id, run_id, record) "
-                    "VALUES (%s, %s, %s)",
-                    (capture_id, run_payload.obj["run_id"], run_payload),
-                )
-            for explanation in explanations:
-                explain_payload = _jsonb(explanation)
-                conn.execute(
-                    "INSERT INTO explain_runs (capture_id, explain_id, record) "
-                    "VALUES (%s, %s, %s)",
-                    (capture_id, explain_payload.obj["explain_id"], explain_payload),
-                )
-        return True
+            def mutate(capture: dict) -> None:
+                capture["explanations"] = [
+                    xid for xid in capture.get("explanations", []) if xid != explain_id
+                ]
+
+            self._locked_update(capture_id, mutate)
+            return deleted

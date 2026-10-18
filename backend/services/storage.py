@@ -1,10 +1,13 @@
-"""Capture image and binary files: naming, directories and serving gates.
+"""Capture directory storage: naming, atomic JSON, serving gates.
 
-Records live in PostgreSQL through records.py. Capture directories are named
+The filesystem + JSON is the source of truth (plan §2.2); records.py owns the
+record files. Every JSON write goes through a temp file + `os.replace` so a
+crash mid-write can never leave a corrupt record. Capture directories are named
 timestamp + 6 random hex so they are sortable through date shards.
 """
 from __future__ import annotations
 
+import json
 import re
 import secrets
 import shutil
@@ -57,6 +60,13 @@ def capture_dir(capture_id: str) -> Path:
     if not d.is_dir():
         raise KeyError(capture_id)
     return d
+
+
+def atomic_write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.{secrets.token_hex(4)}.tmp")
+    tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    tmp.replace(path)
 
 
 def free_space_gb() -> float:

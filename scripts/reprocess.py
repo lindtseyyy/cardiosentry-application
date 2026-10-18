@@ -12,7 +12,8 @@ Guarantees:
   RECORDED final quad and geometry mode — never re-detected — and the
   regeneration is verified byte-identical against the stored one when it
   exists.
-- Each run stores its prediction and updates the capture record in PostgreSQL.
+- Each run writes predictions/<run_id>.json and updates capture.json. Stop the
+  server first: its record lock is in-process and does not cover this script.
 """
 from __future__ import annotations
 
@@ -30,7 +31,6 @@ import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
 from backend.schemas.prediction import PredictionRecord  # noqa: E402
-from backend.services import db  # noqa: E402
 from backend.services import ingest as ing  # noqa: E402
 from backend.services import preprocess as prep  # noqa: E402
 from backend.services import rectify as rect  # noqa: E402
@@ -169,29 +169,28 @@ def main() -> int:
     if not a.capture and not a.all:
         sys.exit("choose --all or --capture ID")
 
-    with db.connect() as pool:
-        records = RecordStore(pool)
-        if a.capture:
-            capture_ids = a.capture
-            for cid in capture_ids:
-                if records.get_capture(cid) is None:
-                    sys.exit(f"unknown capture {cid}")
-        else:
-            capture_ids = [record["capture_id"] for record in records.all_captures()]
+    records = RecordStore()
+    if a.capture:
+        capture_ids = a.capture
+        for cid in capture_ids:
+            if records.get_capture(cid) is None:
+                sys.exit(f"unknown capture {cid}")
+    else:
+        capture_ids = [record["capture_id"] for record in records.all_captures()]
 
-        for mid in model_ids:
-            lm = load_model(loaded[mid])
-            print(f"model {mid}: views={lm.views} "
-                  f"thresholds={[round(t, 3) for t in lm.thresholds]}")
-            for cid in capture_ids:
-                try:
-                    record = records.get_capture(cid)
-                    if record is None:
-                        raise KeyError(cid)
-                    d = storage.capture_dir(cid)
-                    run_capture(records, d, record, lm, a.force, a.dry_run)
-                except Exception as exc:
-                    print(f"  FAIL {cid}: {exc}", file=sys.stderr)
+    for mid in model_ids:
+        lm = load_model(loaded[mid])
+        print(f"model {mid}: views={lm.views} "
+              f"thresholds={[round(t, 3) for t in lm.thresholds]}")
+        for cid in capture_ids:
+            try:
+                record = records.get_capture(cid)
+                if record is None:
+                    raise KeyError(cid)
+                d = storage.capture_dir(cid)
+                run_capture(records, d, record, lm, a.force, a.dry_run)
+            except Exception as exc:
+                print(f"  FAIL {cid}: {exc}", file=sys.stderr)
     return 0
 
 

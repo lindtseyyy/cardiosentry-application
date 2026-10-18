@@ -1,14 +1,10 @@
-"""FastAPI app state: database, stores, registry and loaded model singletons."""
+"""FastAPI app state: record stores, registry and loaded model singletons."""
 from __future__ import annotations
 
-import logging
 import threading
 import time
 from dataclasses import dataclass, field
 
-from psycopg_pool import ConnectionPool
-
-from backend.services import db
 from backend.services.accounts import AccountStore
 from backend.services.ecg_gate import EcgGate, load_gate
 from backend.services.records import RecordStore
@@ -16,12 +12,9 @@ from backend.services.registry import LoadedDescriptor, discover, active
 from backend.services.runner import LoadedModel, load_model
 from backend.settings import settings
 
-log = logging.getLogger("cardiosentry.state")
-
 
 @dataclass
 class AppState:
-    db: ConnectionPool
     accounts: AccountStore
     records: RecordStore
     started_monotonic: float = field(default_factory=time.monotonic)
@@ -66,18 +59,11 @@ def get_state(request) -> AppState:
 
 
 def create_state() -> AppState:
-    """Connect and migrate the database before loading the model at startup.
+    """Load the account store before the model at startup.
 
-    Database/model problems refuse startup rather than serving broken state.
+    Account-store/model problems refuse startup rather than serving broken state.
     """
     settings.ensure_dirs()
-    pool = db.connect()
-    accounts = AccountStore(pool)
+    accounts = AccountStore(settings.data_dir / "accounts.json")
     accounts.ensure_admin()
-    records = RecordStore(pool)
-    if not records.has_captures() and next(
-            settings.data_dir.glob("[0-9]*/*/capture.json"), None) is not None:
-        log.warning(
-            "captures table is empty but legacy capture.json files exist under %s "
-            "— run python3 scripts/import_filesystem.py", settings.data_dir)
-    return AppState(db=pool, accounts=accounts, records=records)
+    return AppState(accounts=accounts, records=RecordStore())

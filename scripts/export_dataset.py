@@ -21,7 +21,6 @@ APP_ROOT = Path(__file__).resolve().parent.parent
 if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
-from backend.services import db  # noqa: E402
 from backend.services.records import RecordStore  # noqa: E402
 
 BASE_COLS = ["capture_id", "created_utc", "sheet_id", "retake_of", "blind_mode",
@@ -74,8 +73,8 @@ def export(out_path: Path) -> int:
     cols = BASE_COLS + runs_cols + ["forward_ms", "preprocess_ms", "run_created_utc"]
 
     n_captures = n_runs = 0
-    with db.connect() as pool, out_path.open("w", newline="", encoding="utf-8") as f:
-        records = RecordStore(pool)
+    records = RecordStore()
+    with out_path.open("w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()
         for rec in records.all_captures():

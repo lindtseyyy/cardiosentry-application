@@ -1,6 +1,8 @@
 # CardioSentry Web Application
 
-Last verified against the tree: **2026-10-15**.
+Last verified against the tree: **2026-10-16**.
+
+> This is the local JSON-storage variant of `../cardiosentry-application/` (the PostgreSQL build), kept for presentation hosting; its on-disk format is the one the PostgreSQL build's `scripts/import_filesystem.py` imports.
 
 An **instrument, not a product**: a password-account web app that puts a real
 smartphone photograph of a real printed 12-lead ECG sheet into the CardioSentry
@@ -16,18 +18,14 @@ Full design rationale: [`CARDIOSENTRY_WEB_APP_PLAN.md`](../CARDIOSENTRY_WEB_APP_
 ## Run it
 
 ```bash
-cd cardiosentry-application
+cd cardiosentry-application-local
 
-# 1. backend deps (system python3; includes psycopg[binary,pool]) + Tesseract,
-#    which the default ECG gate runs as a subprocess
+# 1. backend deps (system python3) + Tesseract, which the default ECG gate
+#    runs as a subprocess
 python3 -m pip install --user --break-system-packages -e '.[dev]'
 sudo apt install tesseract-ocr
 
-# 2. local PostgreSQL (start the existing container if stopped)
-docker start postgres-db-cardiosentry
-# Configure DATABASE_URL or CARDIOSENTRY_DATABASE_URL in .env (see below).
-# Pre-PostgreSQL JSON was imported on 2026-10-08 and archived.
-# Restore into an empty database: see §Security & privacy, "Legacy JSON archive".
+# 2. no database: records and accounts are JSON files under captures/
 
 # 3. weights (gitignored training artifacts — copy from the research tree)
 cp ../prototype-results/new_runs/convnext_tiny_v1_rfpn_clean12_colab_a100_seed42/convnext_tiny_rfpn/inference.pt \
@@ -52,26 +50,11 @@ python3 scripts/verify_model.py
 python3 -m backend.main
 ```
 
-The app requires a local PostgreSQL database. It reads `DATABASE_URL` or
-`CARDIOSENTRY_DATABASE_URL` from `.env`; the prefixed name wins if both are
-set. Use the connection setting shown in `.env.example`, with the actual
-password kept private. The configured target is
-`127.0.0.1:5432/cardiosentry (user cardiosentry)`, in
-`postgres-db-cardiosentry` (`postgres:16-alpine`). A missing or unreachable
-database stops startup before the model loads; remote database hosts are refused.
-
-The legacy import completed on 2026-10-08 and was verified field-for-field:
-93 captures, 86 runs and 35 explain records, with no missing or extra ids.
-The only difference was stripped EXIF NUL padding in 40 captures; ownership
-remains `admin` without backfill, and `created_utc` matches. The source JSON
-was moved to the legacy archive. `scripts/import_filesystem.py --data-dir
-<extracted archive>` is now the restore path (see §Security & privacy,
-**Legacy JSON archive**): run it before the first boot of an empty database.
-The importer is idempotent and leaves extracted files untouched; existing
-database rows always win, including edited or trashed captures. Check reported
-problems before continuing. If an extracted legacy tree contains `accounts.json`,
-importing before startup seeds admin preserves its credentials; this archive
-contains no account file. New installations with no legacy data need no import.
+No database server is needed. Records and accounts are JSON files under
+`CARDIOSENTRY_DATA_DIR` (default `captures/`), written atomically (temp file +
+`os.replace`). The server is a single process (one worker); one in-process
+lock serialises read-modify-write of each `capture.json`, so do not run two
+servers, or `scripts/reprocess.py`, against the same folder at once.
 
 The terminal prints every LAN URL and a QR code. On the phone (same Wi-Fi),
 open `http://<laptop-ip>:8000` → *Sign in* or *Create account* → *Take photo*.
@@ -86,17 +69,16 @@ The app was developed on Linux; macOS should work the same way, and on Windows
 use WSL2 (the scripts are bash and `models/active.yaml` is a symlink).
 
 **Prerequisites:** Git, Python ≥ 3.12 with pip, Node.js ≥ 20 with npm and
-Docker. The weights alone take 2.6 GB of disk; for Grad-CAM memory use see
-§Memory.
+Tesseract. No database server. The weights alone take 2.6 GB of disk; for
+Grad-CAM memory use see §Memory.
 
 **What the repository does *not* contain:** model weights (`models/weights/`,
-2.6 GB), `.env`, the database, `captures/` (PHI) and `certs/`. You copy or
-create these yourself.
+2.6 GB), `.env`, `captures/` (records, accounts and images — PHI) and
+`certs/`. You copy or create these yourself.
 
 ```bash
-# 1. clone
-git clone https://github.com/lindtseyyy/cardiosentry-application.git
-cd cardiosentry-application
+# 1. get the tree (this variant lives next to ../cardiosentry-application/)
+cd cardiosentry-application-local
 
 # 2. Python dependencies. Linux: install the CPU-only PyTorch wheels first,
 #    or pip pulls the multi-GB CUDA build. Skip that line on macOS.
@@ -109,27 +91,18 @@ python3 -m pip install --user --break-system-packages -e '.[dev]'
 # Tesseract for the default ECG gate (macOS: brew install tesseract)
 sudo apt install tesseract-ocr
 
-# 3. PostgreSQL 16 in Docker, published on loopback only
-PGPASS=$(openssl rand -hex 24)        # hex: no URL escaping needed
-docker run -d --name postgres-db-cardiosentry \
-    -e POSTGRES_USER=cardiosentry -e POSTGRES_PASSWORD="$PGPASS" \
-    -e POSTGRES_DB=cardiosentry \
-    -p 127.0.0.1:5432:5432 \
-    -v postgres-db-cardiosentry-data:/var/lib/postgresql/data \
-    postgres:16-alpine
-# after a reboot: docker start postgres-db-cardiosentry
+# 3. no database: records and accounts are JSON files under captures/
 
-# 4. settings: .env is gitignored and holds the database secret
+# 4. settings (optional): .env is gitignored
 cp .env.example .env
-echo "CARDIOSENTRY_DATABASE_URL=postgresql://cardiosentry:$PGPASS@127.0.0.1:5432/cardiosentry" >> .env
 chmod 600 .env
 # optionally set CARDIOSENTRY_PRIVACY_CONTROLLER / _CONTACT (see .env.example)
 
-# 5. weights: copy ALL nine .pt files from an existing install (or the
+# 5. weights: copy ALL .pt files from an existing install (or the
 #    research tree, see §Run it step 3). Startup validates every descriptor in
 #    models/, so one missing file stops the server.
 mkdir -p models/weights
-rsync -av --progress <old-host>:<path>/cardiosentry-application/models/weights/ models/weights/
+rsync -av --progress <old-host>:<path>/cardiosentry-application-local/models/weights/ models/weights/
 
 # 6. frontend
 (cd frontend && npm ci && npm run build)
@@ -160,7 +133,7 @@ weight file:
 | `resnet50_hires` | `resnet50_hires.pt` |
 | `resnet50_v1` | `resnet50_v1.pt` |
 
-**First sign-in.** On an empty database, the first boot creates the account
+**First sign-in.** With no `accounts.json`, the first boot creates the account
 `admin` with password `admin` and logs a WARNING. Sign in and change the
 password at once under **Settings**.
 
@@ -175,27 +148,21 @@ The certificate is issued for the new machine's LAN IP, so run it there.
 checkout turns it into a plain text file (Windows without symlink support),
 set `CARDIOSENTRY_ACTIVE_MODEL=<model id>` in `.env` instead.
 
-**Optional: move existing records.** To bring accounts, captures and runs
-from an old machine, restore the database **before the new install's first
-boot**. After the app has started, the database already holds a schema and an
-`admin` row, and the restore conflicts with them. The dump and the image
-folder are PHI: move them over an encrypted channel and delete the copies
-afterwards.
+**Optional: move existing records.** Accounts, captures and runs all live in
+`captures/`. Copy the whole folder with both servers stopped, **before the new
+install's first boot** (otherwise the first boot seeds a fresh
+`accounts.json`). The folder is PHI: move it over an encrypted channel and
+delete the copies afterwards.
 
 ```bash
-# old machine
-docker exec postgres-db-cardiosentry pg_dump -U cardiosentry -Fc cardiosentry > cardiosentry.dump
+# old machine (server stopped)
 tar czf captures.tgz captures/
 
-# new machine: after step 4, before step 7
-docker exec -i postgres-db-cardiosentry pg_restore -U cardiosentry -d cardiosentry --no-owner < cardiosentry.dump
+# new machine: after step 5, before step 8
 tar xzf captures.tgz
 ```
 
-Account passwords move with the dump. The legacy JSON archive
-(`~/.local/share/cardiosentry/legacy-json/`) lives outside the repo and does
-not move with these steps; copy it only if you need it as a restore source.
-
+Account passwords move with `accounts.json`.
 ## What it does, stage by stage
 
 ```
@@ -236,40 +203,37 @@ submits findings—the backend resolves the stored run and re-applies its
 suppression policy. Rules and sources are documented in
 [`docs/clinical-guidance.md`](docs/clinical-guidance.md).
 
-Every arrow is a recorded transformation, persisted per capture. Images and
-optional binary attribution arrays stay on disk:
+Every arrow is a recorded transformation, persisted per capture as files:
 
 ```
-captures/2026-08-23/2026-08-23_014215_a3f9c1/
-├── original.jpg        # uploaded bytes (GPS EXIF stripped by default, recorded)
-├── preview.jpg         # ~1280px, phone UI only — never for inference
-├── overlay.jpg         # preview + detected/final quad — debugging aid
-├── corrected.png       # 1686×1311 rectified sheet, LOSSLESS
-├── model_input.png     # the active model's geometry (768×1024 by default),
-│                       #   LOSSLESS, exactly the tensorized pixels
-└── explain/            # xai_<stamp>_<method>_<model>/ — one per attribution run
-                        #   <method>_<LABEL>_{heatmap,overlay}.png
-                        #   raw.npz (optional)
+captures/
+├── accounts.json       # users + session-token hashes (schema_version 1)
+└── 2026-08-23/2026-08-23_014215_a3f9c1/
+    ├── capture.json        # the capture record (owner, EXIF, quad, privacy ack…)
+    ├── original.jpg        # uploaded bytes (GPS EXIF stripped by default, recorded)
+    ├── preview.jpg         # ~1280px, phone UI only — never for inference
+    ├── overlay.jpg         # preview + detected/final quad — debugging aid
+    ├── corrected.png       # 1686×1311 rectified sheet, LOSSLESS
+    ├── model_input.png     # the active model's geometry (768×1024 by default),
+    │                       #   LOSSLESS, exactly the tensorized pixels
+    ├── predictions/        # <run_id>.json — one per prediction run
+    └── explain/            # xai_<stamp>_<method>_<model>/ — one per attribution run
+                            #   record.json (not file-served)
+                            #   <method>_<LABEL>_{heatmap,overlay}.png
+                            #   raw.npz (optional)
 ```
 
-**Records (PostgreSQL, schema v1):** `accounts`, `sessions`, `captures`,
-`prediction_runs`, `explain_runs`, `schema_migrations`. Capture, prediction and
-explain records are JSONB, accessed through `RecordStore`; run rows and the
-capture's run-id lists change in one transaction. Images are not in the database.
+**Records (JSON files):** `RecordStore` reads and writes `capture.json`,
+`predictions/<run_id>.json` and `explain/<explain_id>/record.json`;
+`AccountStore` owns `accounts.json`. Writes are atomic.
 
-New captures record the creator's permanent account id in
-`captures.record.owner`: the username at registration, immutable on rename.
-The indexed `captures.owner_id` is `owner_of(record)`: missing or null `owner`
-means the `admin` account id, even after it renames itself. Imported record JSON
-is not backfilled; PostgreSQL-incompatible NUL padding is stripped from strings.
-Account ids are never reused and stay reserved names. `owned_capture` checks
-the live database row against `current_account(request).account_id`, never
-`.username`, and requires the image folder to exist.
-
-Legacy `capture.json`, prediction JSON and explain `record.json` were moved
-out of `captures/` into the legacy archive. `captures/` now holds only images
-and arrays; PostgreSQL is the source of truth for records. The app does not
-read or write legacy JSON.
+New captures record the creator's permanent account id in the record's
+`owner`: the username at registration, immutable on rename.
+`owner_of(record)` maps a missing or null `owner` to the `admin` account id,
+even after it renames itself. Account ids are never reused and stay reserved
+names. Listing scans every `capture.json`, filters by owner, then pages.
+`owned_capture` checks the record's owner against
+`current_account(request).account_id`, never `.username`.
 
 ### Explainability — where the model looked
 
@@ -319,7 +283,7 @@ curl -b jar localhost:8000/api/models/active/layers  # Grad-CAM target candidate
 
 Attribution runs are **derived data** — every one is reproducible from
 `model_input.png` plus the parameters in its stored record — so deleting one
-removes its database row and files outright rather than moving it to `_trash/`.
+removes its folder (including its `record.json`) outright rather than moving it to `_trash/`.
 Re-rectifying a capture marks its existing runs `stale`: they explain pixels
 the capture no longer has. Fetch a record with
 `GET /api/captures/{id}/explain/{xid}`; the old
@@ -358,9 +322,9 @@ python3 scripts/export_dataset.py --out captures_export.csv
 - **Blind mode + reference labels** (§17.6): the app records what the ECG
   actually shows, and can hide scores until labels are entered, so the dataset
   is defensible.
-- **Records have one source of truth:** local PostgreSQL, through `AccountStore`
-  and `RecordStore`; the filesystem holds images and binary arrays only.
-  `atomic_write_json` and filesystem record readers have been removed.
+- **Records live next to their images:** JSON files under `captures/`, through
+  `AccountStore` and `RecordStore`, written atomically with
+  `storage.atomic_write_json`.
 
 ## Models shipped
 
@@ -424,26 +388,16 @@ are not diagnostic models and are not listed by `/api/models`; see
   `PATCH /api/auth/account`, always requiring the current password. A rename
   keeps all of the account's sessions; a password change signs out its other
   sessions, keeping the current one.
-- The local PostgreSQL `accounts` and `sessions` tables hold permanent account
-  ids, salted PBKDF2-SHA256 password hashes (600,000 iterations) and SHA-256
-  session-token hashes, not plaintext passwords or tokens. Account edits and
-  session revocations use database transactions. Legacy accounts missing an
-  `account_id` use their username at import.
-- Protect and back up both `captures/` and the database in the Docker volume
-  **`postgres-db-cardiosentry-data`**. A database backup can be produced with
-  `docker exec postgres-db-cardiosentry pg_dump -U cardiosentry cardiosentry`;
-  save its output securely, because it contains health records and credential
-  hashes. `pg_dump` does not include image files.
-- Losing the volume loses accounts, sessions, reserved ids and all database
-  records, while image files survive. The legacy archive can be re-imported
-  (pre-migration data only), but cannot recover new records or edits made after
-  migration. Without a database backup, startup can seed the default admin
-  again and old account ids can be claimed by new accounts. Do not resume
-  serving before recovery.
-- The database connection is local only (loopback or Unix socket); `.env`'s
-  connection URL contains a secret and must not be committed or printed.
-  Old application versions expect JSON files, not current database records;
-  rolling back code restores neither the archived files nor the database.
+- `captures/accounts.json` holds permanent account ids, salted PBKDF2-SHA256
+  password hashes (600,000 iterations) and SHA-256 session-token hashes, not
+  plaintext passwords or tokens. It is rewritten atomically; expired sessions
+  are pruned on write. A corrupt `accounts.json` refuses startup.
+- Back up by copying the whole `captures/` folder (with the server stopped):
+  it contains `accounts.json` (credential/session hashes), the health records
+  and the images. Protect every copy as PHI.
+- Losing `accounts.json` loses accounts, sessions and reserved ids; startup
+  then seeds the default admin again and old account ids can be claimed by
+  new accounts. Restore it from backup before serving again.
 - Sessions last **30 days** and survive server restarts. The
   `cardiosentry_session` cookie is HttpOnly and SameSite=Lax. It is Secure only
   over HTTPS, deliberately not over plain HTTP so LAN sign-in works. Plain HTTP
@@ -453,35 +407,8 @@ are not diagnostic models and are not listed by `/api/models`; see
 - `.pt` loading uses `torch.load(weights_only=False)` — acceptable only
   because the checkpoints are self-produced and sha-pinned; never accept a
   `.pt` through the API.
-- **Legacy JSON archive:** `~/.local/share/cardiosentry/legacy-json/` holds
-  `legacy-json.tar.gz` (214 members with relative `<date>/<id>/…` paths),
-  `legacy-json.sha256` (per-file manifest), `legacy-json.tar.gz.sha256`
-  (tarball checksum), and `VERIFY.txt` (aggregate verifier output, no PHI).
-  The archive contains **personal and health data (PHI)**: EXIF device info,
-  sheet ids, annotations, privacy acknowledgements, timestamps and model
-  results. The archive directory and its `cardiosentry/` parent are owner-only
-  **0700**, and files are **0600**. It is outside the repo and `captures/`,
-  never served by the app, and **not encrypted at rest** in this prototype;
-  encryption with `age`/`gpg` is a later option only. Neither `pg_dump` nor
-  image backups include it; any copy of the archive is also PHI.
-
-  Restore into an empty or lost database **before the app's first boot**.
-  Run from the app root in Bash:
-
-  ```bash
-  umask 077
-  ARCH="$HOME/.local/share/cardiosentry/legacy-json"
-  (cd "$ARCH" && sha256sum -c legacy-json.tar.gz.sha256)
-  R=$(mktemp -d "$ARCH/restore.XXXXXX")
-  tar -xzf "$ARCH/legacy-json.tar.gz" -C "$R"
-  (cd "$R" && sha256sum --quiet --strict -c "$ARCH/legacy-json.sha256")
-  python3 scripts/import_filesystem.py --data-dir "$R"
-  rm -rf -- "$R"
-  ```
-
-  The importer remains idempotent; existing database rows win. The restore
-  drill imported the same 93 captures / 86 runs / 35 explain records with
-  `warnings: 0; problems: 0` and passed the field-for-field verifier.
+- Records stay in this machine's `captures/` folder; there is no network
+  database and no outbound connection.
 
 ### Accounts API
 
@@ -519,17 +446,18 @@ accepted. Each upload records the accepted version in
 the capture record's `session.privacy_notice_ack` as the proof of consent
 (`null` = an API or script caller that never saw it).
 
-The current `PRIVACY_NOTICE_VERSION` is `2026-10-15.1`; the notice also describes
-local PostgreSQL records, image files, credential hashes, sign-in sessions,
-permanent account ids, capture ownership and signing out other devices when a
-password changes.
+The current `PRIVACY_NOTICE_VERSION` is `2026-10-16.1`; the notice also describes
+records and accounts stored as files in the captures folder, image files,
+credential hashes, sign-in sessions, permanent account ids, capture ownership,
+signing out other devices when a password changes, and that uploads the ECG
+gate rejects are not stored.
 
 Before photographing anyone else's ECG, the operator must:
 
 - set `CARDIOSENTRY_PRIVACY_CONTROLLER` and `CARDIOSENTRY_PRIVACY_CONTACT`
   (the notice shows "Not yet configured" until then);
 - honour what the notice promises: erase a capture permanently on request
-  (in-app delete only sets `captures.trashed_utc` and moves its folder to
+  (in-app delete only moves its folder, records included, to
   `captures/_trash/`), delete everything when the study ends, never copy data
   off the machine without consent, and report a breach to the National Privacy
   Commission within 72 hours;
@@ -542,108 +470,62 @@ Change any of those and update
 in `backend/api/config.py`, which re-prompts every browser.
 
 For permanent erasure, first trash the capture in the app, then remove its
-`captures/_trash/<date>/<capture_id>/` folder and delete its database records.
-Run the following in the `cardiosentry` database, replacing `<capture_id>` with
-the exact id; child rows must be removed before the capture row:
-
-```sql
-BEGIN;
-DELETE FROM explain_runs WHERE capture_id = '<capture_id>';
-DELETE FROM prediction_runs WHERE capture_id = '<capture_id>';
-DELETE FROM captures WHERE capture_id = '<capture_id>';
-COMMIT;
-```
-
-**Remove the capture from the legacy archive** if retaining it. After the
-app trash, `_trash` folder removal and SQL steps above, run in Bash, replacing
-`<capture_id>` with the exact id:
-
-```bash
-umask 077
-ARCH="$HOME/.local/share/cardiosentry/legacy-json"; CID='<capture_id>'; DAY="${CID:0:10}"
-cd "$ARCH"
-if tar -tzf legacy-json.tar.gz | grep -q "^$DAY/$CID/"; then
-  gunzip legacy-json.tar.gz &&
-  tar --delete --wildcards -f legacy-json.tar "$DAY/$CID/*" &&
-  gzip -9 legacy-json.tar &&
-  grep -vF "  $DAY/$CID/" legacy-json.sha256 > legacy-json.sha256.new &&
-  mv legacy-json.sha256.new legacy-json.sha256 &&
-  sha256sum legacy-json.tar.gz > legacy-json.tar.gz.sha256
-fi
-tar -tzf legacy-json.tar.gz | grep -c "$CID"
-```
-
-The last command must print **0** (`grep` exits 1 when there are no matches).
-Captures created after migration have no archive entries, so the `if` skips
-them. `gzip`/`gunzip` keep mode 0600; `umask 077` keeps the new manifest at 0600.
-
-Delete the whole archive once it is no longer needed, for example when the
-study ends or once verified database backups exist:
-
-```bash
-rm -rf -- "$HOME/.local/share/cardiosentry/legacy-json" && rmdir "$HOME/.local/share/cardiosentry"
-```
-
-Until then it retains pre-migration records, and a restore would bring back
-erased ones unless they were also removed from the archive. Exports, archive
-copies and `pg_dump` backups remain the controller's erasure/retention
-responsibility; deleting the local archive does not remove those copies.
+`captures/_trash/<date>/<capture_id>/` folder (or delete
+`captures/<date>/<capture_id>/` directly). The folder holds all of the
+capture's records, so nothing else needs deleting. Exports and backup copies
+of `captures/` remain the controller's erasure/retention responsibility.
 
 ## Testing
 
-`python3 -m pytest -q --collect-only` collects **238 cases / 113 top-level test
-functions**:
+`python3 -m pytest -q --collect-only` collects **246 cases / 117 top-level test
+functions**. The suite runs the real model and uses no database.
 
 | Test file | Cases | Functions |
 |---|---:|---:|
 | `test_accounts.py` | 2 | 2 |
-| `test_api_smoke.py` | 13 | 13 |
-| `test_database.py` | 2 | 2 |
+| `test_api_smoke.py` | 14 | 14 |
 | `test_detect.py` | 9 | 9 |
+| `test_ecg_gate.py` | 8 | 5 |
 | `test_explain.py` | 19 | 19 |
-| `test_guidance.py` | 181 | 57 |
+| `test_guidance.py` | 182 | 57 |
 | `test_model_descriptor.py` | 4 | 4 |
 | `test_preprocess_parity.py` | 8 | 7 |
 
-`tests/conftest.py` rewrites the settings URL at import to `<db>_test`
-(`cardiosentry_test` here); the session fixture recreates it. `isolated_db`
-creates a migrated `<db>_test_unit` (`cardiosentry_test_unit`) for each test
-that uses it and drops it afterwards. These fixtures use the `postgres`
-maintenance database to create/drop test databases, so the configured role
-needs that permission. They never open the real application database. Never
-bypass the suffix guards or point tests at production data. Test images live
-under `$TMPDIR/cardiosentry_test_captures`, not the real `captures/`.
+`tests/conftest.py` sets `CARDIOSENTRY_DATA_DIR` to
+`$TMPDIR/cardiosentry_local_test_captures` before importing `backend.*`, asserts
+that is the data dir and wipes it at import (fresh accounts and records each
+session), so tests
+never touch the real `captures/`. Never point tests at production data.
 
 The suite pins `resnet50_cbam_nat768` independently of the active model and runs
 real CPU inference; the full suite takes minutes. The shared `client` is logged
 in as admin; auth/logout tests use `anon_client` instead of logging it out.
+Store access is `client.app.state.csd.{records,accounts}`.
 
 
 ## Layout
 
 ```
 backend/   FastAPI app: api/ (routes) · services/ (ingest, detect, rectify,
-           db, records, accounts, preprocess, quality, registry, runner, storage, explain) · arch/
+           records, accounts, preprocess, quality, registry, runner, storage, explain) · arch/
            (vendored model architectures) · schemas/ (pydantic records)
 frontend/  Vite + React 18 + TS + Tailwind CSS v4 PWA (zero client-side image processing)
 models/    descriptors + weights
-scripts/   verify_model.py · reprocess.py · export_dataset.py · import_filesystem.py · make_cert.sh
-tests/     accounts · database/import · preprocess parity (★) · detection
+scripts/   verify_model.py · reprocess.py · export_dataset.py · make_cert.sh
+tests/     accounts · preprocess parity (★) · detection
            · API smoke · explainability · clinical guidance (fixtures included)
 ```
 
 | Important service | Owns |
 |---|---|
-| `backend/services/db.py` | local-only psycopg connection pool, startup failures without secrets, versioned `MIGRATIONS` under an advisory transaction lock; append versions, never edit v1 |
-| `backend/services/accounts.py` | PostgreSQL accounts/sessions, salted PBKDF2-SHA256 (600k), 30-day sessions, missing admin creation at startup, immutable account ids and `owner_of` |
-| `backend/services/records.py` | JSONB capture/prediction/explain records, ownership and live-row queries, locked updates and transactional run indexes, NUL stripping, soft delete and idempotent import |
-| `backend/services/storage.py` | image/binary directories, ids, file-serving whitelists and moving folders to `_trash/`; no JSON persistence |
+| `backend/services/accounts.py` | `accounts.json` users/sessions, salted PBKDF2-SHA256 (600k), 30-day sessions, missing admin creation at startup, immutable account ids and `owner_of` |
+| `backend/services/records.py` | JSON capture/prediction/explain records, owner-filtered listing, lock-serialised updates, trash moves |
+| `backend/services/storage.py` | image/binary directories, ids, file-serving whitelists, `atomic_write_json` and moving folders to `_trash/` |
 
 ## Known v1 limits (all deliberate — see the plan)
 
-- PostgreSQL holds records; files hold images. The original spec's
-  "no relational database" requirement and Q9 in
-  `../CARDIOSENTRY_WEB_APP_PLAN.md` are superseded by this migration.
+- Records are JSON files on disk with one in-process lock: single server
+  process only, no concurrent writers from other processes.
 - No waveform digitization, no queue (single process, CPU inference ~0.5–2 s),
   no ONNX/TorchScript (fidelity over speed); the service worker only registers
   once HTTPS is set up (phase 3, `scripts/make_cert.sh`).

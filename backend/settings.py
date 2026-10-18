@@ -1,14 +1,13 @@
 """Application settings.
 
 Everything is overridable via environment variables (or a `.env` file next to
-the app). Paths default relative to the repository root of this checkout;
-the local PostgreSQL connection URL must be configured.
+the app). Paths default relative to the repository root of this checkout so the
+app runs unconfigured from a fresh clone.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 APP_ROOT = Path(__file__).resolve().parent.parent
@@ -24,12 +23,6 @@ class Settings(BaseSettings):
     port: int = 8000
     local_only: bool = False       # overrides host to 127.0.0.1
     app_token: str | None = None   # optional shared-secret gate (§19.2); unused = open
-
-    # ---------------------------------------------------------------- database
-    database_url: SecretStr | None = Field(
-        default=None,
-        validation_alias=AliasChoices("CARDIOSENTRY_DATABASE_URL", "DATABASE_URL"),
-    )
 
     # ---------------------------------------------------------------- data privacy
     # Named in the in-app Data Privacy Notice (Philippine Data Privacy Act,

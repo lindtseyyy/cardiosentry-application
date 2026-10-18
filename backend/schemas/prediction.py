@@ -1,4 +1,4 @@
-"""Prediction run schemas — API response and persisted prediction_runs.record."""
+"""Prediction run schemas — API response and the persisted predictions/*.json."""
 from __future__ import annotations
 
 from pydantic import BaseModel, Field, field_validator
@@ -19,7 +19,7 @@ class ModelRunInfo(BaseModel):
     weight_source: str | None = None
     # (height, width) per view, and for the model input as a whole. Records
     # written before the round-3 rectangular geometry spelled both as bare
-    # ints; the validators below promote those so old prediction_runs.record values still
+    # ints; the validators below promote those so old predictions/*.json still
     # load (§16 #18 — provenance must survive a model swap).
     views: list[list[int]] = Field(default_factory=list)
     input_size: list[int]
@@ -58,7 +58,7 @@ class PredictionResponse(BaseModel):
 
 
 class PredictionRecord(BaseModel):
-    """Persisted prediction_runs.record — the response plus provenance."""
+    """Persisted predictions/<run_id>.json — the response plus provenance."""
     schema_version: int = 1
     run_id: str
     capture_id: str

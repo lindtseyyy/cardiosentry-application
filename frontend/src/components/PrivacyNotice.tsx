@@ -5,7 +5,8 @@ import type { PrivacyConfig } from "../api/types";
 // issuances. Every factual claim here describes what the app actually does —
 // change the backend (GPS stripping, trash-not-unlink, no outbound traffic,
 // guidance answers not saved, non-ECG uploads not stored, accounts, account
-// ids / session revocation, records in a local PostgreSQL database) and this
+// ids / session revocation, records as JSON files under the local captures
+// folder) and this
 // text must change with it, along with
 // PRIVACY_NOTICE_VERSION in backend/api/config.py.
 
@@ -80,7 +81,7 @@ export default function PrivacyNotice({ privacy }: { privacy: PrivacyConfig | nu
         <li>
           <strong>Account details:</strong> your username, a salted one-way hash of
           your password (never the password itself), and a sign-in session record,
-          kept in this computer's local database. Your account keeps a permanent account ID —
+          kept in a file on this computer. Your account keeps a permanent account ID —
           the username first registered — that does not change when you change
           your username. Each capture records the account ID of the account that
           created it.
@@ -115,12 +116,11 @@ export default function PrivacyNotice({ privacy }: { privacy: PrivacyConfig | nu
       <h2 className={heading}>5. Where it is kept and who can see it</h2>
       <ul className={list}>
         <li>
-          Photographs and the images derived from them are stored as files, and
-          the records (account details, capture details, scores, heat-map details
-          and anything you type) in a PostgreSQL database, both on the computer
-          running CardioSentry. The app connects to that database only on the same
-          computer and does not send your photographs or results to any cloud
-          service or third party.
+          Photographs, the images derived from them and the records (account
+          details, capture details, scores, heat-map details and anything you
+          type) are stored as files in the app's captures folder on the computer
+          running CardioSentry. The app does not send your photographs or results
+          to any cloud service or third party.
         </li>
         <li>
           Your phone talks to that computer over the local network only. The app
@@ -147,9 +147,9 @@ export default function PrivacyNotice({ privacy }: { privacy: PrivacyConfig | nu
       <h2 className={heading}>6. How long it is kept</h2>
       <p className={paragraph}>
         Data is kept only for as long as the research study needs it, and is
-        then permanently deleted. Deleting a capture in the app moves its images
-        to a holding folder and marks its record deleted in the database, so
-        mistakes can be undone; ask the controller to erase it permanently.
+        then permanently deleted. Deleting a capture in the app moves its whole
+        folder — images and records — to a holding folder, so mistakes can be
+        undone; ask the controller to erase it permanently.
       </p>
 
       <h2 className={heading}>7. Your rights as a data subject</h2>

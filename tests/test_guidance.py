@@ -9,7 +9,7 @@ import yaml
 
 from backend.schemas.guidance import GuidanceRequest
 from backend.schemas.model_descriptor import ModelDescriptor
-from backend.services import guidance
+from backend.services import guidance, storage
 from backend.settings import APP_ROOT, settings
 
 CLEAN12 = "convnext_v1_base_clean12"
@@ -806,22 +806,19 @@ def test_route_uses_stored_positives_and_filters_suppressed_heads(client):
     directory = settings.data_dir / "2099-01-01" / capture_id
     directory.mkdir(parents=True)
     try:
-        client.app.state.csd.records.import_capture(
-            {
-                "capture_id": capture_id,
-                "created_utc": "2099-01-01T00:00:00.000Z",
-                "predictions": [run_id],
-            },
-            [{
-                "run_id": run_id,
-                "model": {"id": LEGACY},
-                "descriptor_snapshot": descriptor.model_dump(mode="json"),
-                # A hand-edited legacy record tries to reinsert a suppressed
-                # head. The endpoint must never pass it to the rule engine.
-                "positive": ["AF", "TInv"],
-            }],
-            [],
-        )
+        storage.atomic_write_json(directory / "capture.json", {
+            "capture_id": capture_id,
+            "created_utc": "2099-01-01T00:00:00.000Z",
+            "predictions": [run_id],
+        })
+        storage.atomic_write_json(directory / "predictions" / f"{run_id}.json", {
+            "run_id": run_id,
+            "model": {"id": LEGACY},
+            "descriptor_snapshot": descriptor.model_dump(mode="json"),
+            # A hand-edited legacy record tries to reinsert a suppressed
+            # head. The endpoint must never pass it to the rule engine.
+            "positive": ["AF", "TInv"],
+        })
         response = client.post(
             f"/api/captures/{capture_id}/guidance",
             json={"run_id": run_id, "context_complete": False},

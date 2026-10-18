@@ -1,10 +1,10 @@
 """CardioSentry — FastAPI entrypoint.
 
 Startup sequence (plan §7.4):
-  1. settings,  2. database connect + migrate,  3. accounts + legacy import hint,
-  4. descriptor discovery + validation,  5. build active model + warm-up forward,
-  6. verify_model self-check when a fixture is configured,
-  7. LAN URLs + terminal QR code,  8. static mount.
+  1. settings,  2. account store (JSON) + default admin,
+  3. descriptor discovery + validation,  4. build active model + warm-up forward,
+  5. verify_model self-check when a fixture is configured,
+  6. LAN URLs + terminal QR code,  7. static mount.
 A broken model refuses startup — never serve with one (plan §16 #10).
 """
 from __future__ import annotations
@@ -103,11 +103,8 @@ async def lifespan(app: FastAPI):
         log.warning("low disk space: %.1f GB free in %s (warn below %.0f GB)",
                     free, settings.data_dir, settings.min_free_gb_warn)
     _print_access_urls()
-    try:
-        yield
-    finally:
-        st.db.close()
-        log.info("shutdown complete")
+    yield
+    log.info("shutdown complete")
 
 
 def _startup_self_check(st: AppState) -> None:

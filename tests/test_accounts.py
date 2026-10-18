@@ -10,11 +10,11 @@ import pytest
 
 from backend.errors import ApiError
 from backend.services.accounts import Account, AccountStore, _password_hash, owner_of
-from scripts.import_filesystem import import_filesystem
 
 
-def test_renamed_admin_keeps_admin_account_id(isolated_db):
-    store = AccountStore(isolated_db)
+def test_renamed_admin_keeps_admin_account_id(tmp_path: Path):
+    path = tmp_path / "accounts.json"
+    store = AccountStore(path)
     store.ensure_admin()
     token = store.create_session("admin")
 
@@ -25,10 +25,9 @@ def test_renamed_admin_keeps_admin_account_id(isolated_db):
     assert store.user_for_token(token) == Account("admin", "boss")
     assert owner_of({}) == "admin"
 
-    reloaded = AccountStore(isolated_db)
+    reloaded = AccountStore(path)
     reloaded.ensure_admin()
-    with isolated_db.connection() as conn:
-        assert [row[0] for row in conn.execute("SELECT username FROM accounts")] == ["boss"]
+    assert set(json.loads(path.read_text(encoding="utf-8"))["users"]) == {"boss"}
     assert reloaded.user_for_token(token) == Account("admin", "boss")
     with pytest.raises(ApiError) as error:
         reloaded.register("admin", "test-password")
@@ -37,7 +36,7 @@ def test_renamed_admin_keeps_admin_account_id(isolated_db):
     assert reloaded.authenticate("boss", "new-password-1") == "boss"
 
 
-def test_import_legacy_accounts_file(isolated_db, tmp_path: Path):
+def test_pre_feature_store_loads_without_account_id(tmp_path: Path):
     path = tmp_path / "accounts.json"
     username = "legacy-user"
     token = "legacy-session-token"
@@ -66,22 +65,13 @@ def test_import_legacy_accounts_file(isolated_db, tmp_path: Path):
     path.write_text(json.dumps(data), encoding="utf-8")
     original_bytes = path.read_bytes()
 
-    report = import_filesystem(isolated_db, tmp_path)
-    assert report.accounts_imported == 1
-    assert report.sessions_imported == 1
-    assert report.problems == []
-    store = AccountStore(isolated_db)
+    store = AccountStore(path)
     assert store.user_for_token(token) == Account(username, username)
     assert path.read_bytes() == original_bytes
     new_token = store.create_session(username)
-    assert path.read_bytes() == original_bytes
+    assert path.read_bytes() != original_bytes
     assert store.user_for_token(new_token) == Account(username, username)
     assert store.user_for_token(token) == Account(username, username)
-
-    report = import_filesystem(isolated_db, tmp_path)
-    assert report.accounts_imported == 0
-    assert report.sessions_imported == 0
-    assert path.read_bytes() == original_bytes
 
     data["users"]["other-user"] = {
         **data["users"][username],
@@ -90,10 +80,6 @@ def test_import_legacy_accounts_file(isolated_db, tmp_path: Path):
     }
     path.write_text(json.dumps(data), encoding="utf-8")
     duplicate_bytes = path.read_bytes()
-    with pytest.raises(ValueError):
-        import_filesystem(isolated_db, tmp_path)
+    with pytest.raises(RuntimeError):
+        AccountStore(path)
     assert path.read_bytes() == duplicate_bytes
-    with isolated_db.connection() as conn:
-        assert conn.execute(
-            "SELECT 1 FROM accounts WHERE username=%s", ("other-user",),
-        ).fetchone() is None

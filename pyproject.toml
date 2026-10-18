@@ -1,5 +1,5 @@
 [project]
-name = "cardiosentry-application"
+name = "cardiosentry-application-local"
 version = "0.1.0"
 description = "Image-space multi-label ECG-sheet classifier — research instrument for real-photo validation"
 requires-python = ">=3.12"
@@ -9,7 +9,6 @@ dependencies = [
     "python-multipart>=0.0.9",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
-    "psycopg[binary,pool]>=3.2",  # pooled local connections; health checks recover after DB restarts
     "PyYAML>=6.0",
     "Pillow>=10.0",
     # OpenCV 4 vs 5: cv2.HoughLinesP returns (N,1,4) vs (N,4) — detect.py
@@ -34,7 +33,6 @@ cardiosentry = "backend.main:main"
 cardiosentry-verify = "scripts.verify_model:main"
 cardiosentry-reprocess = "scripts.reprocess:main"
 cardiosentry-export = "scripts.export_dataset:main"
-cardiosentry-import = "scripts.import_filesystem:main"
 
 [tool.setuptools]
 packages = { find = { include = ["backend*", "scripts*"] } }

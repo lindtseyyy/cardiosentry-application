@@ -1,4 +1,4 @@
-"""Request/response schemas for captures and the capture record (Postgres captures.record)."""
+"""Request/response schemas for captures, and the capture.json record schema."""
 from __future__ import annotations
 
 from typing import Literal
@@ -95,7 +95,7 @@ class Annotation(BaseModel):
 
 
 class CaptureRecord(BaseModel):
-    """The capture record (Postgres captures.record) — everything except runs."""
+    """The persisted capture.json — everything about one capture, except runs."""
     schema_version: int = 1
     capture_id: str
     created_utc: str

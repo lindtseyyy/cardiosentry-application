@@ -2,22 +2,20 @@
 
 Environment overrides MUST be set before any `backend.*` import (settings is a
 module-level singleton), which is why they live here at conftest import time.
-Tests never touch the real captures/ directory or the real database.
+Tests never touch the real captures/ directory.
 """
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
 import pytest
-import psycopg
-from psycopg import sql
-from psycopg.conninfo import conninfo_to_dict, make_conninfo
-from pydantic import SecretStr
 
-os.environ.setdefault("CARDIOSENTRY_DATA_DIR", str(
-    Path(tempfile.gettempdir()) / "cardiosentry_test_captures"))
+# Distinct from the PostgreSQL build's test dir so both suites can coexist.
+_TEST_DATA_DIR = Path(tempfile.gettempdir()) / "cardiosentry_local_test_captures"
+os.environ.setdefault("CARDIOSENTRY_DATA_DIR", str(_TEST_DATA_DIR))
 # The suite pins ONE model on purpose: several assertions are specific to it
 # (Grad-CAM's `attn` at 2048 channels on a 24x32 grid is a ResNet-50 fact, not
 # an EfficientNetV2-S one). It is therefore independent of whatever
@@ -35,16 +33,12 @@ os.environ.setdefault("CARDIOSENTRY_NUM_THREADS", "2")
 
 from backend.settings import settings
 
-if settings.database_url is not None:
-    _url = settings.database_url.get_secret_value()
-    _real_dbname = conninfo_to_dict(_url)["dbname"]
-    _test_dbname = f"{_real_dbname}_test"
-    assert _test_dbname.endswith("_test") and _test_dbname != _real_dbname
-    # PostgreSQL truncates identifiers at 63 bytes, which must not lose the suffix.
-    assert len(_test_dbname.encode("utf-8")) <= 63
-    settings.database_url = SecretStr(make_conninfo(_url, dbname=_test_dbname))
-
-from backend.services import db
+# Records and accounts are files in data_dir, so every session starts from an
+# empty test directory (the analogue of recreating a test database). Refuse to
+# wipe anything else.
+assert Path(settings.data_dir).resolve() == _TEST_DATA_DIR.resolve(), (
+    f"tests must use {_TEST_DATA_DIR}, not {settings.data_dir}")
+shutil.rmtree(_TEST_DATA_DIR, ignore_errors=True)
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
@@ -54,52 +48,8 @@ def fixtures() -> Path:
     return FIXTURES
 
 
-def _recreate(dbname: str) -> None:
-    url = settings.database_url.get_secret_value()
-    test_dbname = conninfo_to_dict(url)["dbname"]
-    assert test_dbname.endswith("_test")
-    assert dbname in (test_dbname, f"{test_dbname}_unit")
-    assert len(dbname.encode("utf-8")) <= 63
-    with psycopg.connect(make_conninfo(url, dbname="postgres"),
-                         autocommit=True) as conn:
-        conn.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(
-            sql.Identifier(dbname),
-        ))
-        conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(dbname)))
-
-
 @pytest.fixture(scope="session")
-def database_url() -> str:
-    if settings.database_url is None:
-        db.connect()  # Raises the app's readable missing-configuration error.
-    url = settings.database_url.get_secret_value()
-    _recreate(conninfo_to_dict(url)["dbname"])
-    return url
-
-
-@pytest.fixture
-def isolated_db():
-    if settings.database_url is None:
-        db.connect()
-    url = settings.database_url.get_secret_value()
-    dbname = f"{conninfo_to_dict(url)['dbname']}_unit"
-    _recreate(dbname)
-    pool = None
-    try:
-        pool = db.connect(make_conninfo(url, dbname=dbname))
-        yield pool
-    finally:
-        if pool is not None:
-            pool.close()
-        with psycopg.connect(make_conninfo(url, dbname="postgres"),
-                             autocommit=True) as conn:
-            conn.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(
-                sql.Identifier(dbname),
-            ))
-
-
-@pytest.fixture(scope="session")
-def client(database_url):
+def client():
     """TestClient over the real app (lifespan loads the real model once)."""
     from fastapi.testclient import TestClient
     from backend.main import app
