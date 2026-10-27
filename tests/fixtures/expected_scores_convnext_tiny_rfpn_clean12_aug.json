@@ -1,0 +1,19 @@
+{
+  "model": "convnext_tiny_rfpn_clean12_aug",
+  "image": "corpus_sheet.jpg",
+  "source": "CardioSentry serving path, CPU float32 (fit=height_pad); the run never evaluated this older-corpus sheet. Weights/loader parity against the run's own stored test probabilities was checked separately on 30 test records (seeded sample of prototype-results/new_runs/convnext_tiny_v1_rfpn_clean12_colab_a100_seed42/correct_prediction_samples), both views: clean max |d| 1.1e-2 (<= 0.084 logit on mid-range scores), augmented max |d| 7.1e-3 (<= 0.042 logit); training evaluated in BF16.",
+  "scores": {
+    "NORM": 2.8167594791739248e-05,
+    "SB": 3.905229095835239e-05,
+    "STACH": 0.0008743968210183084,
+    "LBBB": 0.0001253439550055191,
+    "LQT": 0.6159805655479431,
+    "AF": 0.9571009278297424,
+    "AFL": 0.2100071907043457,
+    "3AVB": 0.00024226725508924574,
+    "2AVB": 0.001915107830427587,
+    "1AVB": 7.053661829559132e-05,
+    "STEMI": 0.0010820800671353936,
+    "STE": 0.0029688833747059107
+  }
+}

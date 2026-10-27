@@ -941,9 +941,9 @@ class RuleSet:
         return frozenset(self.served_labels) - {self.normal_label}
 
 
-# The clean12 label set. All three clean12 checkpoints serve it in this order;
-# the rules are per condition, so V1 Base + RFPN and V1 Tiny + RFPN reuse the
-# set reviewed for plain V1 Base.
+# The clean12 label set. Every clean12 checkpoint serves it in this order;
+# the rules are per condition, so V1 Base + RFPN and V1 Tiny + RFPN (clean-only
+# and clean + augmented) reuse the set reviewed for plain V1 Base.
 _CLEAN12_LABELS = (
     "NORM", "SB", "STACH", "LBBB", "LQT", "AF", "AFL", "3AVB",
     "2AVB", "1AVB", "STEMI", "STE",
@@ -964,6 +964,11 @@ RULE_SETS: dict[str, RuleSet] = {
         ),
         RuleSet(
             model_id="convnext_tiny_rfpn_clean12",
+            served_labels=_CLEAN12_LABELS,
+            suppressed_labels=frozenset(),
+        ),
+        RuleSet(
+            model_id="convnext_tiny_rfpn_clean12_aug",
             served_labels=_CLEAN12_LABELS,
             suppressed_labels=frozenset(),
         ),

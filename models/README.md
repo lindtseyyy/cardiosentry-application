@@ -9,7 +9,8 @@ changes.
 
 ```
 models/
-├── active.yaml -> convnext_tiny_rfpn_clean12.yaml  # which model the app serves
+├── active.yaml -> convnext_tiny_rfpn_clean12_aug.yaml  # which model the app serves
+├── convnext_tiny_rfpn_clean12_aug.yaml    # HEEDB clean12 + augmented ConvNeXt-V1 Tiny + RFPN, 12 heads
 ├── convnext_tiny_rfpn_clean12.yaml        # HEEDB clean12 ConvNeXt-V1 Tiny + RFPN, 12 heads
 ├── convnext_v1_base_rfpn_clean12.yaml     # HEEDB clean12 ConvNeXt-V1 Base + RFPN, 12 heads
 ├── convnext_v1_base_clean12.yaml          # HEEDB clean12 ConvNeXt-V1 Base, 12 heads
@@ -21,9 +22,10 @@ models/
 ├── resnet50_dual.yaml                     # round-2 dual-stream 384+768
 ├── resnet50_v1.yaml                       # round-1, 384px, tensor call style
 ├── gates/                                 # ECG / not-ECG gates (§ECG gate), not diagnostic models
-│   ├── ocr_lead_labels_v1.yaml            # default: OCR of the printed lead labels
-│   └── convnext_tiny_rfpn_ecg_gate_v1.yaml  # learned gate head (alternative)
+│   ├── convnext_tiny_rfpn_ecg_gate_v1.yaml  # default: learned gate head
+│   └── ocr_lead_labels_v1.yaml            # OCR of the printed lead labels (alternative)
 └── weights/
+    ├── convnext_tiny_rfpn_clean12_aug_inference.pt  # 120 MB inference export
     ├── convnext_tiny_rfpn_clean12_inference.pt  # 120 MB inference export
     ├── convnext_v1_base_rfpn_clean12_inference.pt  # 360 MB inference export
     ├── convnext_tiny_rfpn_ecg_gate_v1.pt  # 121 MB: Tiny RFPN export + gate head
@@ -42,6 +44,10 @@ models/
 The checkpoints are the training outputs in the research tree; copy them here:
 
 ```bash
+# clean12 + augmented ConvNeXt-V1 Tiny + RFPN: inference.pt of MyDrive/CardioSentry/new_runs/
+#   convnext_tiny_v1_rfpn_clean12_aug_colab_a100_seed42
+cp ../prototype-results/new_runs/convnext_tiny_v1_rfpn_clean12_aug_colab_a100_seed42/convnext_tiny_rfpn/inference.pt \
+   weights/convnext_tiny_rfpn_clean12_aug_inference.pt
 # clean12 ConvNeXt-V1 Tiny + RFPN: inference.pt of MyDrive/CardioSentry/new_runs/
 #   convnext_tiny_v1_rfpn_clean12_colab_a100_seed42
 cp ../prototype-results/new_runs/convnext_tiny_v1_rfpn_clean12_colab_a100_seed42/convnext_tiny_rfpn/inference.pt \
@@ -143,20 +149,21 @@ example. Key fields:
 `gates/<id>.yaml` (schema: `backend/schemas/ecg_gate.py`) describes the gate run
 on every upload before a capture is created (`services/ecg_gate.py`). Setting
 `CARDIOSENTRY_ECG_GATE` names the id; **that one setting switches gates**
-(default `ocr_lead_labels_v1`; empty = off). The descriptor's `kind` picks the
+(default `convnext_tiny_rfpn_ecg_gate_v1`; empty = off). The descriptor's `kind` picks the
 implementation. `registry.discover` only scans `models/*.yaml`, so gates never
 appear in `/api/models` and cannot be made active. Rejected = `422 NOT_AN_ECG`,
 folder removed, no record; accepted captures store `record.ecg_gate`.
 
 | id | `kind` | passes | cost |
 |---|---|---|---|
-| `ocr_lead_labels_v1` *(default)* | `ocr_lead_labels` | ≥ 4 of the 9 labels aVR, aVL, aVF, V1–V6 read | Tesseract binary; ~2–4 s accept, ≤ ~7 s reject |
-| `convnext_tiny_rfpn_ecg_gate_v1` | `learned` | P(ECG) ≥ 0.5 | 121 MB `.pt`, ~0.1 GB RAM, ~3 s |
+| `ocr_lead_labels_v1` | `ocr_lead_labels` | ≥ 4 of the 9 labels aVR, aVL, aVF, V1–V6 read | Tesseract binary; ~2–4 s accept, ≤ ~7 s reject |
+| `convnext_tiny_rfpn_ecg_gate_v1` *(default)* | `learned` | P(ECG) ≥ 0.5 | 121 MB `.pt`, ~0.1 GB RAM, ~3 s |
 
 ### `ocr_lead_labels_v1` (services/ecg_gate_ocr.py)
 
 Replaced the learned gate as default on 2026-10-15 because the learned gate
-accepted EEG printouts (grid + traces, no lead labels).
+accepted EEG printouts (grid + traces, no lead labels); the learned gate was
+made default again on 2026-10-19.
 
 - **Engine:** the `tesseract` CLI (5.3.4 here; `apt install tesseract-ocr`),
   called directly with `OMP_THREAD_LIMIT=1` — no Python OCR package. Startup

@@ -8,8 +8,9 @@ neck over timm stages.1-3 (256 channels) and the residual head, whose logits are
 the ConvNeXt head's plus a LayerNorm + Linear over the pooled neck maps.
 `convnext_tiny_rfpn_clean12` is the same build from
 `convnext_tiny_v1_rfpn_clean12_colab_v1/make_notebook.py` (ConvNeXt-V1 Tiny,
-drop-path 0.1); the app serves it as diagnostic model
-`convnext_tiny_rfpn_clean12` and as the learned ECG gate's frozen feature
+drop-path 0.1); the app serves it as diagnostic models
+`convnext_tiny_rfpn_clean12` and `convnext_tiny_rfpn_clean12_aug` (same build,
+trained on clean + augmented sheets) and as the learned ECG gate's frozen feature
 extractor (services/ecg_gate.py). `fusion_necks.py` is the runs' own file (identical in
 both), copied byte for byte. The init values do not matter once the weights are
 loaded; they are kept so the module is built exactly as in training and
