@@ -19,7 +19,7 @@ Full design rationale: [`CARDIOSENTRY_WEB_APP_PLAN.md`](../CARDIOSENTRY_WEB_APP_
 cd cardiosentry-application
 
 # 1. backend deps (system python3; includes psycopg[binary,pool]) + Tesseract,
-#    which the default ECG gate runs as a subprocess
+#    which the optional OCR ECG gate (ocr_lead_labels_v1) runs as a subprocess
 python3 -m pip install --user --break-system-packages -e '.[dev]'
 sudo apt install tesseract-ocr
 
@@ -30,12 +30,14 @@ docker start postgres-db-cardiosentry
 # Restore into an empty database: see §Security & privacy, "Legacy JSON archive".
 
 # 3. weights (gitignored training artifacts — copy from the research tree)
+cp ../prototype-results/new_runs/convnext_tiny_v1_rfpn_clean12_aug_colab_a100_seed42/convnext_tiny_rfpn/inference.pt \
+   models/weights/convnext_tiny_rfpn_clean12_aug_inference.pt   # active model
 cp ../prototype-results/new_runs/convnext_tiny_v1_rfpn_clean12_colab_a100_seed42/convnext_tiny_rfpn/inference.pt \
    models/weights/convnext_tiny_rfpn_clean12_inference.pt
 cp ../prototype-results/convnext_v1_base_rfpn_clean12_colab_a100_seed42/inference.pt \
    models/weights/convnext_v1_base_rfpn_clean12_inference.pt
 cp ../prototype-results/new_runs/convnext_tiny_v1_rfpn_clean12_ecg_gate_v1_seed42/inference_with_gate.pt \
-   models/weights/convnext_tiny_rfpn_ecg_gate_v1.pt     # learned ECG gate (optional)
+   models/weights/convnext_tiny_rfpn_ecg_gate_v1.pt     # learned ECG gate (default)
 cp ../prototype-results/NEW_convnext_v2_tiny_V1/best.pt models/weights/convnextv2_tiny_v1img_v1.pt
 cp ../prototype-results/hybrid_v1/resnet50_hires/weights/best.pt models/weights/resnet50_hires.pt
 cp ../prototype-results/hybrid_v1/resnet50_dual/weights/best.pt  models/weights/resnet50_dual.pt
@@ -106,7 +108,7 @@ python3 -m pip install --user --break-system-packages -e '.[dev]'
 # (--break-system-packages is for Debian/Ubuntu system Python. A virtualenv
 #  also works: python3 -m venv .venv && . .venv/bin/activate, then drop
 #  --user --break-system-packages from both commands.)
-# Tesseract for the default ECG gate (macOS: brew install tesseract)
+# Tesseract for the optional OCR ECG gate (macOS: brew install tesseract)
 sudo apt install tesseract-ocr
 
 # 3. PostgreSQL 16 in Docker, published on loopback only
@@ -150,6 +152,7 @@ weight file:
 | descriptor | weight file |
 |---|---|
 | `convnext_v1_base_clean12` | `convnext_v1_base_clean12_best.pt` |
+| `convnext_tiny_rfpn_clean12_aug` | `convnext_tiny_rfpn_clean12_aug_inference.pt` |
 | `convnext_tiny_rfpn_clean12` | `convnext_tiny_rfpn_clean12_inference.pt` |
 | `convnext_v1_base_rfpn_clean12` | `convnext_v1_base_rfpn_clean12_inference.pt` |
 | `convnextv2_tiny_v1img_v1` | `convnextv2_tiny_v1img_v1.pt` |
@@ -209,18 +212,19 @@ upload ──▶ ingest ──▶ ECG gate ──▶ detect ──▶ corner edi
 
 The **ECG gate** (`services/ecg_gate.py`, `models/gates/*.yaml`, setting
 `CARDIOSENTRY_ECG_GATE`) checks the whole oriented upload before detection. The
-default, `ocr_lead_labels_v1`, runs Tesseract over the photo after removing
-everything that is not character-sized and accepts it when at least 4 of the
-printed lead labels aVR, aVL, aVF, V1–V6 are read (~2–4 s; EEG printouts and
-other non-ECGs read at most 2). Otherwise the upload returns `422 NOT_AN_ECG`,
-its folder is removed and no record is written, so the corner editor and the
-model are never reached; the screen tells the user to upload an ECG with its
-lead labels visible, or to move closer if it is one. Accepted captures store
-the labels read in `record.ecg_gate`. Labels must be legible, so a sheet filling
-~10% of the frame (test fixture `photo_small.jpg`) is rejected. Setting
-`CARDIOSENTRY_ECG_GATE=convnext_tiny_rfpn_ecg_gate_v1` switches to the learned
-gate (a head on a frozen clean12 ConvNeXt-V1 Tiny + RFPN; it lets EEG printouts
-through). `models/README.md` §ECG gate has the measurements.
+default, `convnext_tiny_rfpn_ecg_gate_v1`, is a learned head on a frozen clean12
+ConvNeXt-V1 Tiny + RFPN and accepts the upload when P(ECG) ≥ 0.5 (~3 s; it lets
+EEG printouts through). Otherwise the upload returns `422 NOT_AN_ECG`, its
+folder is removed and no record is written, so the corner editor and the model
+are never reached; the screen tells the user to upload an ECG with its lead
+labels visible, or to move closer if it is one. Accepted captures store the
+gate score in `record.ecg_gate`. A sheet filling ~10% of the frame (test
+fixture `photo_small.jpg`) is rejected. Setting
+`CARDIOSENTRY_ECG_GATE=ocr_lead_labels_v1` switches to the OCR gate: Tesseract
+reads the photo after removing everything that is not character-sized and
+accepts it when at least 4 of the printed lead labels aVR, aVL, aVF, V1–V6 are
+read (~2–4 s; EEG printouts and other non-ECGs read at most 2).
+`models/README.md` §ECG gate has the measurements.
 
 After prediction, runs from a model with reviewed rules (the clean12
 ConvNeXt-V1 models and the earlier ConvNeXt-V2 V1 model) also pass their final
@@ -366,7 +370,8 @@ python3 scripts/export_dataset.py --out captures_export.csv
 
 | id | checkpoint | input (h×w) | call style | purpose |
 |---|---|---|---|---|
-| `convnext_tiny_rfpn_clean12` *(active)* | convnext_v1_rfpn_clean12 | 768×1024 | `tensor` | ConvNeXt-V1 Tiny + Residual FPN (`CS_FUSION=rfpn`) trained on the HEEDB clean12 renders; 12 heads, all served, no gate head. Test pathology macro AP 0.923 |
+| `convnext_tiny_rfpn_clean12_aug` *(active)* | convnext_v1_rfpn_clean12 | 768×1024 | `tensor` | the same Tiny + RFPN recipe trained on the clean **and** the stage-4 paper/photo augmented sheet of every clean12 record; 12 heads, all served, clinical_v1 thresholds refitted for this run. Test pathology macro AP 0.925 clean / 0.924 augmented sheets |
+| `convnext_tiny_rfpn_clean12` | convnext_v1_rfpn_clean12 | 768×1024 | `tensor` | ConvNeXt-V1 Tiny + Residual FPN (`CS_FUSION=rfpn`) trained on the HEEDB clean12 renders; 12 heads, all served, no gate head. Test pathology macro AP 0.923 |
 | `convnext_v1_base_rfpn_clean12` | convnext_v1_rfpn_clean12 | 768×1024 | `tensor` | ConvNeXt-V1 Base + Residual FPN (`CS_FUSION=rfpn`) trained on the HEEDB clean12 renders; 12 heads, all served. Test pathology macro AP 0.923 |
 | `convnext_v1_base_clean12` | convnext_v1_clean12 | 768×1024 | `tensor` | the same run recipe without the FPN neck (plain V1 Base); 12 heads, all served |
 | `convnextv2_tiny_v1img_v1` | convnextv2_v1img | 768×1024 | `tensor` | ConvNeXt-V2 Tiny trained on the clean-only V1 image corpus. Twelve checkpoint heads; nine currently served, with TInv, LQT, and PRWP suppressed reversibly |
@@ -396,7 +401,7 @@ protocol fingerprint `36988c5e0ba5d72d` and remain available for controlled
 comparison; their documented header-redaction gap is covered in
 `models/README.md`.
 
-The ECG gates (`ocr_lead_labels_v1`, default, and `convnext_tiny_rfpn_ecg_gate_v1`)
+The ECG gates (`convnext_tiny_rfpn_ecg_gate_v1`, default, and `ocr_lead_labels_v1`)
 are not diagnostic models and are not listed by `/api/models`; see
 `models/README.md` §ECG gate.
 
@@ -406,8 +411,8 @@ are not diagnostic models and are not listed by `/api/models`; see
   `CARDIOSENTRY_LOCAL_ONLY=true` or set `CARDIOSENTRY_APP_TOKEN`.
 - No port forwarding, no public tunnels: password accounts are for trusted LAN
   use, not a public deployment.
-- Sign in or register before using the app; the topbar **Settings** button
-  (or mobile hamburger menu) opens the **Settings** screen (`#/settings`), which contains username/password editing and **Sign out**. Every `/api/*`
+- Log in or create an account before using the app; the topbar **Settings** link
+  (or mobile hamburger menu) opens the **Settings** screen (`#/settings`), which contains username/password editing and **Log out**. Every `/api/*`
   path except health, config, auth login,
   register and logout requires a valid session (`401 AUTH_REQUIRED` otherwise).
   The optional shared token gate still applies in addition, even to those
@@ -519,10 +524,9 @@ accepted. Each upload records the accepted version in
 the capture record's `session.privacy_notice_ack` as the proof of consent
 (`null` = an API or script caller that never saw it).
 
-The current `PRIVACY_NOTICE_VERSION` is `2026-10-15.1`; the notice also describes
-local PostgreSQL records, image files, credential hashes, sign-in sessions,
-permanent account ids, capture ownership and signing out other devices when a
-password changes.
+The current `PRIVACY_NOTICE_VERSION` is `2026-10-27.2`; the notice also describes
+server-side storage, photo metadata, credential hashes, sign-in sessions and
+per-account capture visibility.
 
 Before photographing anyone else's ECG, the operator must:
 
@@ -531,12 +535,13 @@ Before photographing anyone else's ECG, the operator must:
 - honour what the notice promises: erase a capture permanently on request
   (in-app delete only sets `captures.trashed_utc` and moves its folder to
   `captures/_trash/`), delete everything when the study ends, never copy data
-  off the machine without consent, and report a breach to the National Privacy
+  off the server without consent, and report a breach to the National Privacy
   Commission within 72 hours;
 - obtain research-ethics approval where the institution requires it.
 
-The notice states facts about this code (GPS stripped, nothing sent off the
-machine, guidance answers not saved, account hashes and capture ownership).
+The notice states facts about this code (stored fields, nothing sent to a cloud
+service or third party, non-ECG uploads not stored, guidance answers not saved,
+account hashes and capture ownership).
 Change any of those and update
 `frontend/src/components/PrivacyNotice.tsx` and bump `PRIVACY_NOTICE_VERSION`
 in `backend/api/config.py`, which re-prompts every browser.
