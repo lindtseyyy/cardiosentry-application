@@ -10,8 +10,10 @@ notes: "inference.pt from MyDrive/CardioSentry/new_runs/convnext_tiny_v1_rfpn_cl
         export: no ECG-gate head. Trained on the HEEDB clean12 renders with 12
         independent sigmoid heads; the export holds the EMA weights of epoch 8,
         the source training selected on validation (pathology macro AP 0.927;
-        test 0.923). Thresholds are the run's validation-tuned per-label F1
-        thresholds, frozen in the export.
+        test 0.923). Thresholds are the clinical_v1 operating point of the
+        threshold study (threshold-configurations/v1-rfpn, fitted and frozen
+        on validation), not the per-label max-F1 thresholds frozen in the
+        export.
         Parity, 2026-10-15: on all 53 clean12 test renders in
         ~/cardiologist_samples_clean12 (the training renderer's 1024x768
         output), the app loader reproduces the run's stored test probabilities
@@ -48,9 +50,19 @@ display_names:
   STEMI: "ST-Elevation Myocardial Infarction"
   STE: "ST Elevation"
 
-# Frozen in inference.pt; identical to the run's validation_tuned_thresholds.json.
+# clinical_v1 operating thresholds, copied at full precision from
+# threshold-configurations/v1-rfpn/threshold_research/outputs/frozen/thresholds_clinical_v1.json
+# (fitted on validation for this inference.pt, sha ab1b6bf5…): NORM max
+# sensitivity with specificity >= 0.995; STEMI and 3AVB max specificity with
+# sensitivity >= 0.90; AF, AFL, 2AVB, STE max-F2; SB, STACH, LBBB, LQT, 1AVB
+# max-F1 (= the export's checkpoint thresholds). Research operating point, not
+# cardiologist-approved. `source: checkpoint` restores the max-F1 thresholds.
 thresholds:
-  source: checkpoint
+  source: explicit
+  explicit: [0.9504110217094421, 0.6011253595352173, 0.8006919622421265,
+             0.6352224349975586, 0.7325918078422546, 0.31573596596717834,
+             0.23231014609336853, 0.08882029354572296, 0.4663594961166382,
+             0.7648916244506836, 0.16132023930549622, 0.20817892253398895]
 
 output:
   suppressed_labels: []
