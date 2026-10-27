@@ -3,11 +3,10 @@ import type { PrivacyConfig } from "../api/types";
 // The Data Privacy Notice under the Philippine Data Privacy Act of 2012
 // (Republic Act No. 10173), its IRR, and National Privacy Commission (NPC)
 // issuances. Every factual claim here describes what the app actually does —
-// change the backend (GPS stripping, trash-not-unlink, no outbound traffic,
-// guidance answers not saved, non-ECG uploads not stored, accounts, account
-// ids / session revocation, records in a local PostgreSQL database) and this
-// text must change with it, along with
-// PRIVACY_NOTICE_VERSION in backend/api/config.py.
+// change the backend (server-side storage, no third-party transfer, soft
+// delete, guidance answers not saved, non-ECG uploads not stored, automatic
+// heat maps, stored fields, per-account visibility) and this text must change
+// with it, along with PRIVACY_NOTICE_VERSION in backend/api/config.py.
 
 const NOT_SET = "Not yet configured — ask the person operating this device.";
 const heading = "text-[1.08rem] font-bold mt-6 mb-2 pb-1 border-b border-line text-ink first-of-type:mt-2.5 md:text-[1.15rem] md:mt-7 md:mb-2.5 md:first-of-type:mt-2.5";
@@ -21,7 +20,7 @@ export function PrivacySummary() {
       A photograph of an ECG is <strong>health information</strong> — sensitive
       personal information under the Philippine Data Privacy Act of 2012 (RA
       10173). CardioSentry stores the photograph, the processed images and the
-      model's scores on this computer only, for research on how the model
+      model's results on the CardioSentry server, for research on how the model
       performs on real photographs. It is not a diagnosis. Cover the patient's
       name and ID before photographing if you can.
     </p>
@@ -60,30 +59,21 @@ export default function PrivacyNotice({ privacy }: { privacy: PrivacyConfig | nu
         </li>
         <li>
           <strong>Images derived from it:</strong> a cropped and straightened copy of
-          the sheet, the exact image given to the model, and — if requested — heat
-          maps showing where the model looked.
+          the sheet, the exact image given to the model, and heat maps showing
+          where the model looked for each finding it flags.
         </li>
         <li>
-          <strong>Model results:</strong> the score for each finding, the thresholds
-          used, and timing and version details.
+          <strong>Model results:</strong> the score for each finding and the model
+          version used.
         </li>
         <li>
-          <strong>Photo and device details:</strong> camera make and model, exposure
-          settings, image size and orientation from the photo's metadata, the
-          file name, and your browser's user-agent string.{" "}
-          <strong>GPS location is removed</strong> from the stored photograph.
-        </li>
-        <li>
-          <strong>Anything you type</strong> into optional fields, such as a sheet code,
-          notes or reference labels.
+          <strong>Photo details:</strong> the file name, the metadata saved by the
+          camera (such as camera model and image size), and your browser type.
         </li>
         <li>
           <strong>Account details:</strong> your username, a salted one-way hash of
-          your password (never the password itself), and a sign-in session record,
-          kept in this computer's local database. Your account keeps a permanent account ID —
-          the username first registered — that does not change when you change
-          your username. Each capture records the account ID of the account that
-          created it.
+          your password (never the password itself), and a sign-in session record.
+          Each capture is linked to the account that created it.
         </li>
       </ul>
       <p className={paragraph}>
@@ -94,13 +84,11 @@ export default function PrivacyNotice({ privacy }: { privacy: PrivacyConfig | nu
 
       <h2 className={heading}>3. Why we collect it</h2>
       <p className={paragraph}>
-        Solely for research: to measure how the CardioSentry model behaves on
-        real photographs of printed ECGs, and to keep a complete, reproducible
-        record of each analysis. Results are experimental scores from an
-        uncalibrated model. They are <strong>not a medical diagnosis</strong>, and no
-        decision about anyone's care is made by this app alone — a qualified
-        health professional must interpret every ECG. The data is not sold,
-        used for marketing, or used to profile anyone.
+        Solely for research: to measure how the CardioSentry model performs on
+        real photographs of printed ECGs. Results are experimental scores, <strong>not
+        a medical diagnosis</strong>; a qualified health professional must interpret
+        every ECG. The data is not sold, used for marketing, or used to profile
+        anyone.
       </p>
 
       <h2 className={heading}>4. Legal basis</h2>
@@ -115,41 +103,30 @@ export default function PrivacyNotice({ privacy }: { privacy: PrivacyConfig | nu
       <h2 className={heading}>5. Where it is kept and who can see it</h2>
       <ul className={list}>
         <li>
-          Photographs and the images derived from them are stored as files, and
-          the records (account details, capture details, scores, heat-map details
-          and anything you type) in a PostgreSQL database, both on the computer
-          running CardioSentry. The app connects to that database only on the same
-          computer and does not send your photographs or results to any cloud
-          service or third party.
-        </li>
-        <li>
-          Your phone talks to that computer over the local network only. The app
-          is not exposed to the internet, and access can be restricted to a
-          shared access token.
+          Photographs, processed images and records are stored on the CardioSentry
+          server. They are not sent to any cloud service or third party.
         </li>
         <li>
           In the app, each scan is visible only to the account that created it.
-          Scans made before accounts existed belong to the administrator account.
         </li>
         <li>
           Only the controller and research personnel bound by confidentiality can
-          access the stored data. Any research output — reports, the thesis,
-          publications — uses aggregate or de-identified results, never a
+          access the stored data. Research outputs — reports, the thesis,
+          publications — use aggregate or de-identified results, never a
           photograph showing a patient's identity.
         </li>
         <li>
-          If any copy is ever moved off that computer (for example, to backup or
-          cloud storage, including outside the Philippines), it will be only
-          with your consent and with safeguards equivalent to RA 10173.
+          Data is copied off the server (for example, to a backup or outside the
+          Philippines) only with your consent and with safeguards equivalent to
+          RA 10173.
         </li>
       </ul>
 
       <h2 className={heading}>6. How long it is kept</h2>
       <p className={paragraph}>
         Data is kept only for as long as the research study needs it, and is
-        then permanently deleted. Deleting a capture in the app moves its images
-        to a holding folder and marks its record deleted in the database, so
-        mistakes can be undone; ask the controller to erase it permanently.
+        then permanently deleted. Deleting a scan in the app removes it from
+        your history; ask the controller to erase it permanently.
       </p>
 
       <h2 className={heading}>7. Your rights as a data subject</h2>
@@ -176,15 +153,12 @@ export default function PrivacyNotice({ privacy }: { privacy: PrivacyConfig | nu
 
       <h2 className={heading}>8. Security and breaches</h2>
       <p className={paragraph}>
-        We apply organizational, physical and technical measures (RA 10173,
-        Sec. 20): local-only storage, location stripping, password-protected
-        accounts, restricted access to the computer and its data folder, and no
-        publication of identifiable images. Changing your password signs out the
-        account's other devices. If a personal data breach occurs that is likely
-        to harm you, the
-        controller will notify the National Privacy Commission and the affected
-        data subjects within 72 hours of knowing about it, as NPC Circular
-        16-03 requires.
+        We protect the data with password-protected accounts, restricted access
+        to the server, and no publication of identifiable images (RA 10173,
+        Sec. 20). If a personal data breach occurs that is likely to harm you,
+        the controller will notify the National Privacy Commission and the
+        affected data subjects within 72 hours of knowing about it, as NPC
+        Circular 16-03 requires.
       </p>
 
       <h2 className={heading}>9. Before you photograph a sheet</h2>
