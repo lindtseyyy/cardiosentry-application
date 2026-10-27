@@ -147,7 +147,7 @@ export default function CaptureScreen({ onUploaded, onOpenPrivacy }: CaptureScre
           </label>
           <button
             type="button"
-            className={`${btn.primary} min-h-12 min-w-35`}
+            className={`${btn.primary} min-h-11 min-w-35 px-6`}
             disabled={!consentChecked}
             onClick={acceptNotice}
           >
@@ -157,25 +157,48 @@ export default function CaptureScreen({ onUploaded, onOpenPrivacy }: CaptureScre
       ) : null}
 
       {acked ? (
-        <div className="grid grid-cols-2 gap-3.5 max-phone:grid-cols-1">
-          <button
-            type="button"
-            className="inline-flex items-center justify-center gap-2.5 min-h-16 text-[1.05rem] font-semibold border-line-strong rounded-card bg-accent-strong text-white"
-            disabled={uploading}
-            onClick={() => cameraRef.current?.click()}
-          >
-            <CameraIcon />
-            Take photo
-          </button>
-          <button
-            type="button"
-            className="inline-flex items-center justify-center gap-2.5 min-h-16 text-[1.05rem] font-semibold border-line-strong rounded-card bg-panel-2"
-            disabled={uploading}
-            onClick={() => galleryRef.current?.click()}
-          >
-            <ImageIcon />
-            Choose photo
-          </button>
+        // Stacked, primary first: one thumb column on phones, one obvious first action everywhere.
+        <div className="w-full max-w-[400px] mx-auto">
+          <div className="flex flex-col gap-3">
+            <button
+              type="button"
+              className="inline-flex items-center justify-center gap-2.5 min-h-14 rounded-card bg-accent-strong border-accent-strong text-white text-[1rem] font-semibold hover:bg-accent hover:border-accent"
+              disabled={uploading}
+              onClick={() => cameraRef.current?.click()}
+            >
+              <CameraIcon />
+              Take photo
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center justify-center gap-2.5 min-h-14 rounded-card bg-panel border-line-strong text-ink text-[1rem] font-semibold hover:bg-panel-2 hover:border-ink-faint"
+              disabled={uploading}
+              onClick={() => galleryRef.current?.click()}
+            >
+              <ImageIcon />
+              Choose photo
+            </button>
+          </div>
+
+          {uploading ? (
+            <div className={`${panel} mt-4`}>
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className={spinnerInline} />
+                <span>
+                  {progress < 1
+                    ? `Uploading… ${Math.round(progress * 100)}%`
+                    : health?.ecg_gate
+                      ? "Checking that this is an ECG…"
+                      : "Processing…"}
+                </span>
+              </div>
+              <div className="h-2.5 rounded-full bg-track overflow-hidden my-2.5">
+                <div className="h-full bg-accent [transition:width_0.15s_ease]" style={{ width: `${progress * 100}%` }} />
+              </div>
+            </div>
+          ) : null}
+
+          {error ? <div className={`${msg.error} mt-4`}>{error}</div> : null}
         </div>
       ) : null}
 
@@ -195,26 +218,6 @@ export default function CaptureScreen({ onUploaded, onOpenPrivacy }: CaptureScre
         hidden
         onChange={(e) => handleFile(e.target.files?.[0] ?? null, "upload")}
       />
-
-      {uploading ? (
-        <div className={`${panel} mb-4.5 mt-3`}>
-          <div className="flex items-center gap-3 flex-wrap">
-            <span className={spinnerInline} />
-            <span>
-              {progress < 1
-                ? `Uploading… ${Math.round(progress * 100)}%`
-                : health?.ecg_gate
-                  ? "Checking that this is an ECG…"
-                  : "Processing…"}
-            </span>
-          </div>
-          <div className="h-2.5 rounded-full bg-track overflow-hidden my-2.5">
-            <div className="h-full bg-accent [transition:width_0.15s_ease]" style={{ width: `${progress * 100}%` }} />
-          </div>
-        </div>
-      ) : null}
-
-      {error ? <div className={`${msg.error} mt-3`}>{error}</div> : null}
 
     </div>
   );

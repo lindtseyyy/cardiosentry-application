@@ -42,8 +42,10 @@ type Screen =
 
 const ID = "[A-Za-z0-9_.-]+";
 const menuItem = "flex items-center w-full px-3.5 py-2.5 min-h-11 border-0 rounded-control text-[0.92rem] text-left [transition:background_0.12s_ease,color_0.12s_ease]";
-const menuItemActive = "bg-panel-3 text-accent-strong font-semibold";
-const menuItemInactive = "bg-transparent text-ink font-medium hover:bg-panel-3 hover:text-accent-strong focus-visible:bg-panel-3 focus-visible:text-accent-strong";
+const menuItemActive = "bg-accent/12 text-accent-strong font-semibold";
+const menuItemInactive = "bg-transparent text-ink font-medium hover:bg-panel-3 focus-visible:bg-panel-3";
+// Desktop topbar links: thin outline, quiet by default, tinted when they are the current page.
+const navLink = "min-h-9 px-3 border border-line rounded-control bg-panel text-[0.9rem] font-medium text-ink-muted hover:bg-panel-3 hover:border-line-strong hover:text-ink aria-[current=page]:bg-accent/12 aria-[current=page]:border-accent/45 aria-[current=page]:text-accent-strong focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent focus-visible:outline-offset-2 max-nav:hidden";
 
 function screenFromHash(): Screen {
   const h = window.location.hash;
@@ -320,7 +322,7 @@ export default function App() {
       return (
         <div className={loadingScreen} aria-live="polite">
           <span className={spinnerLarge} />
-          Checking sign-in…
+          Checking login…
         </div>
       );
     }
@@ -412,17 +414,18 @@ export default function App() {
             CardioSentry
           </button>
           {user ? (
-            <nav className="flex items-center gap-2">
+            <nav className="flex items-center gap-1.5" aria-label="Main">
               <button
                 type="button"
-                className={`${btn.small} bg-matte-green border-matte-green text-white font-semibold hover:bg-matte-green-hover hover:border-matte-green-hover max-nav:hidden`}
+                className={navLink}
                 onClick={goCapture}
+                aria-current={screen.name === "capture" ? "page" : undefined}
               >
                 Classify ECG
               </button>
               <button
                 type="button"
-                className={`${btn.small} ${btn.matteBlue} max-nav:hidden`}
+                className={navLink}
                 onClick={goHistory}
                 aria-current={screen.name === "history" ? "page" : undefined}
               >
@@ -430,19 +433,34 @@ export default function App() {
               </button>
               <button
                 type="button"
-                className={`${btn.small} bg-panel-3 border-line-strong text-ink font-semibold hover:bg-panel-hover hover:border-accent hover:text-accent-strong aria-[current=page]:border-accent aria-[current=page]:text-accent-strong max-nav:hidden`}
+                className={navLink}
                 onClick={goAccount}
                 aria-current={screen.name === "account" ? "page" : undefined}
               >
                 Settings
               </button>
-              <span className="inline-flex items-center px-2 min-h-11 text-ink-muted text-[0.88rem] font-medium max-w-35 truncate cursor-default select-text max-nav:max-w-27.5 max-nav:text-[0.82rem] max-nav:px-1 max-tiny:max-w-20 max-tiny:text-[0.78rem]" title={`Signed in as ${user}`}>
-                {user}
+              <span className="w-px h-5 mx-2 bg-line-strong max-nav:hidden" aria-hidden="true" />
+              <span className="inline-flex items-center gap-1.5 px-1 min-h-9 min-w-0 text-ink-muted text-[0.88rem] font-medium cursor-default select-text max-nav:text-[0.82rem] max-nav:mr-1 max-tiny:text-[0.78rem]" title={`Logged in as ${user}`}>
+                <svg
+                  className="size-5 flex-none max-tiny:size-4.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <circle cx="12" cy="10" r="3" />
+                  <path d="M7 20.66V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.66" />
+                </svg>
+                <span className="max-w-35 truncate max-nav:max-w-27.5 max-tiny:max-w-20">{user}</span>
               </span>
               <button
                 ref={hamburgerRef}
                 type="button"
-                className="hidden max-nav:inline-flex items-center justify-center size-11 min-h-11 min-w-11 p-0 bg-panel-3 border-line rounded-control text-ink [transition:background_0.15s_ease,border-color_0.15s_ease,transform_0.05s_ease] hover:bg-panel-hover hover:border-accent hover:text-accent-strong focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent focus-visible:outline-offset-2 max-tiny:size-10 max-tiny:min-w-10 max-tiny:min-h-10"
+                className="hidden max-nav:inline-flex items-center justify-center size-11 min-h-11 min-w-11 p-0 bg-transparent border-line rounded-control text-ink [transition:background_0.15s_ease,border-color_0.15s_ease] hover:bg-panel-3 aria-expanded:bg-panel-3 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-accent focus-visible:outline-offset-2 max-tiny:size-10 max-tiny:min-w-10 max-tiny:min-h-10"
                 onClick={() => setMenuOpen((open) => !open)}
                 aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
                 aria-expanded={menuOpen}
@@ -454,7 +472,7 @@ export default function App() {
                   viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
-                  strokeWidth="2.2"
+                  strokeWidth="2"
                   strokeLinecap="round"
                   aria-hidden="true"
                 >
@@ -473,7 +491,7 @@ export default function App() {
                 </svg>
               </button>
               {menuOpen ? (
-                <div id="topbar-menu" ref={menuRef} className="absolute top-[calc(100%+6px)] right-0 min-w-45 bg-panel border border-line rounded-card shadow-menu p-1.5 flex flex-col gap-1 z-100 animate-menu-in" role="menu">
+                <div id="topbar-menu" ref={menuRef} className="absolute top-[calc(100%+6px)] right-0 min-w-48 bg-panel border border-line rounded-card shadow-menu p-1.5 flex flex-col gap-0.5 z-100 animate-menu-in" role="menu">
                   <button
                     type="button"
                     className={`${menuItem} ${screen.name === "capture" ? menuItemActive : menuItemInactive}`}

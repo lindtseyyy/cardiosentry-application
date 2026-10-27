@@ -73,6 +73,7 @@
 
   --radius-control: 8px;
   --radius-card: 12px;
+  --shadow-card: 0 1px 2px rgba(23, 39, 36, 0.04), 0 6px 20px -10px rgba(23, 39, 36, 0.12);
   --shadow-dialog: 0 10px 30px rgba(23, 39, 36, 0.1);
   --shadow-menu: 0 10px 28px rgba(0, 0, 0, 0.1);
   --shadow-modal: 0 16px 40px rgba(0, 0, 0, 0.25);
@@ -156,7 +157,7 @@
     font: inherit;
     color: var(--color-ink);
     background: var(--color-panel);
-    border: 1px solid var(--color-line);
+    border: 1px solid var(--color-line-strong);
     border-radius: var(--radius-control);
     padding: 10px 12px;
     min-height: 44px;

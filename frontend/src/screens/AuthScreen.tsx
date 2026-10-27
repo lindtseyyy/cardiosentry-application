@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { api, isApiError, friendlyMessage } from "../api/client";
 import PasswordInput from "../components/PasswordInput";
 import type { AuthRequest } from "../api/types";
-import { authActions, authPanel, authSubmit, btn, field, fieldError, fieldLabel, msg, panelTitle } from "../ui";
+import { authCard, btn, field, fieldError, fieldHint, fieldLabel, msg, pageSub, pageTitle, spinnerOnFill, submitFull, textLink } from "../ui";
+
 interface AuthScreenProps {
   onAuthenticated: (username: string, isAdmin?: boolean) => void;
 }
@@ -90,16 +91,24 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
     }
   };
 
+  const isLogin = mode === "login";
+
   return (
-    <div className={authPanel}>
-      <h2 className={`${panelTitle} mt-0`}>{mode === "login" ? "Sign in" : "Create account"}</h2>
+    <div className={authCard}>
+      <h1 className={pageTitle}>{isLogin ? "Login" : "Create account"}</h1>
+      <p className={pageSub}>
+        {isLogin
+          ? "Enter your username and password to continue."
+          : "Choose a username and password for your new account."}
+      </p>
+
       {errors.form && (
-        <div className={msg.error} role="alert">
+        <div className={`${msg.error} mt-5`} role="alert">
           {errors.form}
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-3 mt-3" noValidate>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-6" noValidate>
         <div className={field}>
           <label className={fieldLabel} htmlFor="auth-username">Username</label>
           <input
@@ -115,9 +124,16 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
             autoCorrect="off"
             spellCheck={false}
             aria-invalid={!!errors.username}
-            aria-describedby={errors.username ? "auth-username-error" : undefined}
+            aria-describedby={
+              [errors.username ? "auth-username-error" : "", isLogin ? "" : "auth-username-hint"].filter(Boolean).join(" ") || undefined
+            }
             disabled={pending}
           />
+          {!isLogin && (
+            <div id="auth-username-hint" className={fieldHint}>
+              3–32 letters, numbers, dots, dashes or underscores.
+            </div>
+          )}
           {errors.username && (
             <div id="auth-username-error" className={fieldError}>
               {errors.username}
@@ -125,7 +141,7 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           )}
         </div>
 
-        <div className={`${field} mt-3`}>
+        <div className={field}>
           <label className={fieldLabel} htmlFor="auth-password">Password</label>
           <PasswordInput
             id="auth-password"
@@ -134,13 +150,20 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
               setPassword(e.target.value);
               if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
             }}
-            autoComplete={mode === "login" ? "current-password" : "new-password"}
+            autoComplete={isLogin ? "current-password" : "new-password"}
             visible={showPassword}
             onToggleVisible={() => setShowPassword(!showPassword)}
             invalid={!!errors.password}
-            describedBy={errors.password ? "auth-password-error" : undefined}
+            describedBy={
+              [errors.password ? "auth-password-error" : "", isLogin ? "" : "auth-password-hint"].filter(Boolean).join(" ") || undefined
+            }
             disabled={pending}
           />
+          {!isLogin && (
+            <div id="auth-password-hint" className={fieldHint}>
+              At least 8 characters.
+            </div>
+          )}
           {errors.password && (
             <div id="auth-password-error" className={fieldError}>
               {errors.password}
@@ -148,8 +171,8 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           )}
         </div>
 
-        {mode === "register" && (
-          <div className={`${field} mt-3`}>
+        {!isLogin && (
+          <div className={field}>
             <label className={fieldLabel} htmlFor="auth-confirm">Confirm password</label>
             <PasswordInput
               id="auth-confirm"
@@ -172,19 +195,19 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           </div>
         )}
 
-        <div className={`${authActions} mt-5`}>
-          <button type="submit" className={`${btn.primary} ${authSubmit}`} disabled={pending}>
-            {mode === "login" ? "Sign in" : "Create account"}
-          </button>
-        </div>
+        <button type="submit" className={`${btn.primary} ${submitFull} mt-2`} disabled={pending}>
+          {pending ? <span className={spinnerOnFill} aria-hidden="true" /> : null}
+          {isLogin ? (pending ? "Logging in…" : "Login") : pending ? "Creating account…" : "Create account"}
+        </button>
       </form>
 
-      <div className="text-center mt-5">
+      <p className="mt-6 mb-0 text-center text-[0.9rem] text-ink-muted">
+        {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
         <button
           type="button"
-          className={btn.link}
+          className={textLink}
           onClick={() => {
-            setMode(mode === "login" ? "register" : "login");
+            setMode(isLogin ? "register" : "login");
             setErrors({});
             setUsername("");
             setPassword("");
@@ -192,9 +215,9 @@ export default function AuthScreen({ onAuthenticated }: AuthScreenProps) {
           }}
           disabled={pending}
         >
-          {mode === "login" ? "Need an account? Create one" : "Already have an account? Sign in"}
+          {isLogin ? "Create one" : "Login"}
         </button>
-      </div>
+      </p>
     </div>
   );
 }
