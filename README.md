@@ -199,6 +199,30 @@ Account passwords move with the dump. The legacy JSON archive
 (`~/.local/share/cardiosentry/legacy-json/`) lives outside the repo and does
 not move with these steps; copy it only if you need it as a restore source.
 
+## Cloud deployment (prototype)
+
+`deploy/` holds the setup for the public prototype at
+`https://cardiosentry.duckdns.org`, which runs on a Singapore ECS with Ubuntu 26.04 and Python 3.14:
+
+- `setup.sh` (idempotent, run as root) creates the `cardiosentry` user,
+  clones/pulls `origin/main` into `/opt/cardiosentry/app`, builds a venv with
+  CPU-only torch, builds the frontend, creates the PostgreSQL role/db and
+  writes `app/.env` (generated DB password, `LOCAL_ONLY=true`,
+  `CARDIOSENTRY_MODELS_DIR=/opt/cardiosentry/models`,
+  `CARDIOSENTRY_DATA_DIR=/opt/cardiosentry/captures`). The models dir holds
+  only `convnext_tiny_rfpn_clean12_aug` and the learned ECG gate, so the server
+  needs only those two `.pt` files in `/opt/cardiosentry/weights/`.
+- `cardiosentry.service` runs uvicorn on `127.0.0.1:8000` with proxy headers.
+- `Caddyfile` terminates TLS (Let's Encrypt) and proxies to it.
+
+Prerequisites: `apt install postgresql caddy nodejs npm python3-venv git` and
+the two weights rsynced to `/opt/cardiosentry/weights/`. The firewall allows
+SSH only from the operator's IP; ports 80/443 stay open to everyone (the app is
+public, and certificate renewal needs them). Change the default `admin`
+password before Caddy goes live. To update, push to `main`, then on the server
+run `cp /opt/cardiosentry/app/deploy/setup.sh /root/ && bash /root/setup.sh && systemctl restart cardiosentry`
+(the copy keeps bash from reading the script while `git pull` rewrites it).
+
 ## What it does, stage by stage
 
 ```

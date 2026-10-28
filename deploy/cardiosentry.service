@@ -1,0 +1,24 @@
+[Unit]
+Description=CardioSentry (FastAPI + PWA)
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+User=cardiosentry
+Group=cardiosentry
+WorkingDirectory=/opt/cardiosentry/app
+# Bound to loopback; Caddy terminates TLS and forwards X-Forwarded-Proto so
+# the session cookie is marked Secure.
+ExecStart=/opt/cardiosentry/venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=on-failure
+RestartSec=5
+UMask=0027
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/cardiosentry/captures /opt/cardiosentry/.cache
+
+[Install]
+WantedBy=multi-user.target
