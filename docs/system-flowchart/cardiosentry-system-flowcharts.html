@@ -330,7 +330,7 @@
       <div class="arrow"></div>
       <div class="node input"><span><strong>Take or Upload ECG Sheet Photo</strong></span></div>
       <div class="arrow"></div>
-      <div class="node subprocess"><span class="stage-code">A</span><span><strong>Capture, Detect Sheet &amp; Check Image Quality</strong><small>Store original · detect paper corners · warn on poor quality</small></span></div>
+      <div class="node subprocess"><span class="stage-code">A</span><span><strong>Capture, Detect Sheet &amp; Check Image Quality</strong><small>Store original · detect paper corners · warn on weak quality · reject poor quality</small></span></div>
       <div class="arrow"></div>
       <div class="node process"><strong>Review / Adjust the Four Sheet Corners</strong></div>
       <div class="arrow"></div>
@@ -380,7 +380,7 @@
       <div class="arrow"></div>
       <div class="node process"><strong>Measure Image Quality</strong><small>Brightness · contrast · clipping · glare · sheet area · skew · resolution</small></div>
       <div class="arrow"></div>
-      <div class="node warning"><strong>Show Quality Warnings, but Do Not Block</strong></div>
+      <div class="node warning"><strong>Show Quality Warnings; Reject a Poor-Quality Photo</strong><small>Poor photo: 422 POOR_IMAGE_QUALITY, deleted, retake · blur is checked again at rectify</small></div>
       <div class="arrow"></div>
       <div class="node input"><span><strong>User Reviews / Drags Four Corner Handles</strong></span></div>
       <div class="arrow"></div>

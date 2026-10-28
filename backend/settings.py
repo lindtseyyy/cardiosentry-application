@@ -94,7 +94,7 @@ class Settings(BaseSettings):
     normalize_std: list[float] = [0.229, 0.224, 0.225]
 
     # ---------------------------------------------------------------- quality (§14)
-    quality_block_on_poor: bool = False         # warn, never block
+    quality_block_on_poor: bool = True          # reject "poor" images (422 POOR_IMAGE_QUALITY); warns never block
     warn_blur_varlap: float = 100.0             # computed on corrected.png (fixed canvas)
     warn_brightness_lo: float = 0.25
     warn_brightness_hi: float = 0.85

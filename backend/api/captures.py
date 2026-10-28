@@ -1,7 +1,7 @@
 """Capture endpoints — the staged pipeline (plan §7.1):
 
-    POST /api/captures                  ingest + ECG gate + detect + quality -> corner editor
-    POST /api/captures/{id}/rectify     homography warp + preprocess -> preview
+    POST /api/captures                  ingest + ECG gate + detect + quality gate -> corner editor
+    POST /api/captures/{id}/rectify     homography warp + preprocess + sharpness gate -> preview
     POST /api/captures/{id}/predict     model forward -> scores
     GET  /api/captures[?page]           history list
     GET  /api/captures/{id}             full record + all prediction runs
@@ -99,6 +99,18 @@ def _error(exc: Exception) -> None:
     raise exc
 
 
+def _blocks(q) -> bool:
+    return settings.quality_block_on_poor and q.level == "poor"
+
+
+def _poor_quality_error(q, outcome: str, advice: str) -> ApiError:
+    """422 POOR_IMAGE_QUALITY naming every reason the image is "poor"."""
+    return ApiError(
+        422, "POOR_IMAGE_QUALITY",
+        f"This photo didn't pass the image-quality check: "
+        f"{'; '.join(qual.poor_reasons(q))}. {outcome} {advice}")
+
+
 # --------------------------------------------------------------------- create
 @router.post("", status_code=201)
 async def create_capture(request: Request,
@@ -138,7 +150,18 @@ async def create_capture(request: Request,
                 "sheet fills most of the photo, keep it in focus, and retake it.")
 
     det = detect_quad(rgb)
-    q = qual.quality_original(rgb, det.quad_px, rgb.shape[1], rgb.shape[0])
+    # Geometry metrics only mean something for a detected sheet; the
+    # failed-detection inset quad would produce arbitrary area/skew flags.
+    q = qual.quality_original(rgb, det.quad_px if det.success else None,
+                              rgb.shape[1], rgb.shape[0])
+    # Quality gate: like a non-ECG photo, a "poor" one never becomes a capture.
+    if _blocks(q):
+        shutil.rmtree(d, ignore_errors=True)
+        log.info("upload rejected by quality gate: %s", q.flags)
+        raise _poor_quality_error(
+            q, "It was not saved.",
+            "Retake it in bright, even light without glare, with the sheet "
+            "filling most of the photo and the phone held flat above it.")
     _write_preview_and_overlay(rgb, d, det.quad_px, det.success)
 
     record = CaptureRecord(
@@ -217,9 +240,6 @@ def rectify_capture(capture_id: str, body: RectifyRequest, request: Request):
         geometry_mode = body.geometry_mode
         r = rect.rectify(rgb, quad_px, geometry_mode=geometry_mode,
                          input_size=pre_spec.input_hw)
-        cv2.imwrite(str(d / "corrected.png"),
-                    cv2.cvtColor(r.corrected, cv2.COLOR_RGB2BGR))
-
         prep_result = prep.preprocess_corrected(
             r.corrected, input_size=pre_spec.input_hw,
             match_training_jpeg=pre_spec.match_training_jpeg,
@@ -227,10 +247,23 @@ def rectify_capture(capture_id: str, body: RectifyRequest, request: Request):
             mean=pre_spec.normalize.mean, std=pre_spec.normalize.std,
             fit=pre_spec.fit, resample=pre_spec.resample,
             margin_px=r.margin_px)
-        (d / "model_input.png").write_bytes(prep_result.model_input_png)
-
-        gray_input = cv2.cvtColor(cv2.imread(str(d / "model_input.png")), cv2.COLOR_BGR2GRAY)
+        # Same decode as reading model_input.png back (BGR -> gray), in memory.
+        gray_input = cv2.cvtColor(
+            cv2.imdecode(np.frombuffer(prep_result.model_input_png, np.uint8),
+                         cv2.IMREAD_COLOR), cv2.COLOR_BGR2GRAY)
         q_after = qual.quality_model_input(r.corrected, gray_input)
+        # Gate before writing, so a rejected correction leaves no stage files
+        # and the record keeps any earlier correction unchanged.
+        if _blocks(q_after):
+            log.info("rectify of %s rejected by quality gate: %s",
+                     capture_id, q_after.flags)
+            raise _poor_quality_error(
+                q_after, "It was not processed.",
+                "Retake the photo with the phone held steady and the sheet in focus.")
+
+        cv2.imwrite(str(d / "corrected.png"),
+                    cv2.cvtColor(r.corrected, cv2.COLOR_RGB2BGR))
+        (d / "model_input.png").write_bytes(prep_result.model_input_png)
     except ApiError:
         raise
     except OSError as exc:

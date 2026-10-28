@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, friendlyMessage, isApiError } from "../api/client";
 import type { PredictionResponse, RectifyResponse } from "../api/types";
+import QualityWarnings from "../components/QualityWarnings";
 import { btn, loadingScreen, msg, panel, sectionTitle, spinnerInline, spinnerLarge } from "../ui";
 
 export interface PreviewScreenProps {
@@ -68,6 +69,8 @@ export default function PreviewScreen({
   return (
     <div>
       <h1 className={`${sectionTitle} mt-0 mx-0 mb-1`}>Preview</h1>
+
+      <QualityWarnings quality={rectify.quality} />
 
       <div className="grid grid-cols-2 gap-3.5 max-narrow:grid-cols-1">
         <div className="border border-line rounded-card overflow-hidden bg-black">

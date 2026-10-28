@@ -11,7 +11,7 @@ The diagrams distinguish what the application does today from the remaining
 model integration work:
 
 - **Solid border — implemented:** photo ingest, OpenCV paper detection,
-  quality warnings, manual corner review, homography rectification, canonical
+  quality warnings and poor-quality rejection, manual corner review, homography rectification, canonical
   preprocessing, multi-label inference, persisted records, and user-requested
   Grad-CAM.
 - **Purple dashed border — integration pending:** the trained ConvNeXt-V2 Tiny
@@ -40,7 +40,8 @@ misrepresent the running application.
   boundary.
 - Grad-CAM is post-hoc and user-requested. It explains a selected positive
   abnormal label; it does not change the prediction.
-- Image quality warnings never block inference.
+- Image quality "warn" flags are shown and never block; a "poor" photo is
+  rejected (at upload: lighting, glare, framing; at rectify: sharpness).
 - A model score is a research output, not a diagnosis or a calibrated
   probability on real phone photographs.
 

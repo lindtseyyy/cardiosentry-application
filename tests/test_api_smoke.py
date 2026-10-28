@@ -20,6 +20,21 @@ def _upload_photo(client, fixtures, name: str, **form):
     return r.json()
 
 
+def _capture_dirs():
+    from backend.settings import settings
+    return set(settings.data_dir.glob("[0-9]*/*"))
+
+
+def _photo_variant(fixtures, name: str, change) -> bytes:
+    """A fixture photo with `change(rgb)` applied, re-encoded as JPEG."""
+    import cv2
+    rgb = cv2.cvtColor(cv2.imread(str(fixtures / name)), cv2.COLOR_BGR2RGB)
+    ok, buf = cv2.imencode(".jpg", cv2.cvtColor(change(rgb), cv2.COLOR_RGB2BGR),
+                           [cv2.IMWRITE_JPEG_QUALITY, 95])
+    assert ok
+    return buf.tobytes()
+
+
 def _user_client(client, username, password):
     user_client = TestClient(client.app)
     r = user_client.post(
@@ -193,24 +208,64 @@ def test_predict_before_rectify_is_a_clear_error(client, fixtures):
 
 
 def test_ecg_gate_rejects_non_ecg_and_stores_nothing(client, fixtures):
-    from backend.settings import settings
-
-    def capture_dirs():
-        return set(settings.data_dir.glob("[0-9]*/*"))
-
     total = client.get("/api/captures").json()["total"]
-    dirs = capture_dirs()
+    dirs = _capture_dirs()
     with open(fixtures / "no_paper.jpg", "rb") as f:   # a bare desk, no sheet
         r = client.post("/api/captures",
                         files={"file": ("no_paper.jpg", f, "image/jpeg")})
     assert r.status_code == 422, r.text
     assert r.json()["code"] == "NOT_AN_ECG"
-    assert capture_dirs() == dirs
+    assert _capture_dirs() == dirs
     assert client.get("/api/captures").json()["total"] == total
 
     cap = _upload_photo(client, fixtures, "photo_clean.jpg")
     gate = client.get(f"/api/captures/{cap['capture_id']}").json()["ecg_gate"]
     assert gate["accepted"] and gate["score"] >= gate["threshold"]
+
+
+def test_poor_lighting_upload_is_rejected_and_stores_nothing(client, fixtures, monkeypatch):
+    from backend.settings import settings
+
+    # A real ECG photo at 12% brightness: the ECG gate still reads its lead
+    # labels, but the exposure is "poor".
+    dark = _photo_variant(fixtures, "photo_clean.jpg", lambda rgb: (rgb * 0.12).astype("uint8"))
+    total = client.get("/api/captures").json()["total"]
+    dirs = _capture_dirs()
+    r = client.post("/api/captures", files={"file": ("dark.jpg", dark, "image/jpeg")})
+    assert r.status_code == 422, r.text
+    assert r.json()["code"] == "POOR_IMAGE_QUALITY"
+    assert "too dark" in r.json()["message"]
+    assert _capture_dirs() == dirs
+    assert client.get("/api/captures").json()["total"] == total
+
+    # Blocking off restores warn-only: the same photo becomes a capture.
+    monkeypatch.setattr(settings, "quality_block_on_poor", False)
+    r = client.post("/api/captures", files={"file": ("dark.jpg", dark, "image/jpeg")})
+    assert r.status_code == 201, r.text
+    assert r.json()["quality"]["level"] == "poor"
+
+
+def test_blurry_photo_is_rejected_at_rectify_and_writes_nothing(client, fixtures):
+    import cv2
+
+    # Lighting and framing pass at upload; sharpness is only measured on the
+    # rectified canvas, where this blur is "poor".
+    blurred = _photo_variant(fixtures, "photo_clean.jpg",
+                             lambda rgb: cv2.GaussianBlur(rgb, (0, 0), 3))
+    r = client.post("/api/captures", files={"file": ("blur.jpg", blurred, "image/jpeg")})
+    assert r.status_code == 201, r.text
+    cap = r.json()
+    cid = cap["capture_id"]
+
+    r = client.post(f"/api/captures/{cid}/rectify",
+                    json={"quad_norm": cap["detection"]["quad_norm"], "source": "auto"})
+    assert r.status_code == 422, r.text
+    assert r.json()["code"] == "POOR_IMAGE_QUALITY"
+    assert "too blurry" in r.json()["message"]
+    assert client.get(f"/api/captures/{cid}/files/model_input.png").status_code == 404
+    assert client.get(f"/api/captures/{cid}").json()["correction"] is None
+    r = client.post(f"/api/captures/{cid}/predict", json={})
+    assert r.json()["code"] == "MISSING_MODEL_INPUT"
 
 
 def test_error_codes_are_stable(client):

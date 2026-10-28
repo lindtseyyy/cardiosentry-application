@@ -55,6 +55,8 @@ const FALLBACKS: Record<string, string> = {
   STORAGE_FULL: "Out of disk space — free some space and retry.",
   NOT_AN_ECG:
     "This doesn't look like an ECG. Upload a photo or scan of a printed 12-lead ECG sheet with its lead labels visible.",
+  POOR_IMAGE_QUALITY:
+    "This photo didn't pass the image-quality check. Retake it in bright, even light, in focus and without glare.",
   INVALID_QUAD: "Those corners cross over — reset and try again.",
   UNKNOWN_LABEL: "Unknown label sent to the server.",
   THRESHOLD_OUT_OF_RANGE: "Thresholds must be between 0 and 1.",

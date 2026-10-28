@@ -1,8 +1,10 @@
 """Image quality checks (plan §14).
 
-POLICY: warn, never block. The purpose of this app is to observe how the model
-behaves on imperfect real images; a rejected photo is a missing data point.
-`settings.quality_block_on_poor` exists and defaults to false.
+POLICY: "warn" flags are shown to the user and never block. A "poor" level
+rejects the image when `settings.quality_block_on_poor` is true (the default):
+at upload the photo is deleted and no capture is created; at rectify the new
+correction is neither written nor recorded. `poor_reasons` gives the
+user-facing explanation. Set the setting to false to restore warn-only.
 
 Metric notes:
 - Sharpness (variance of Laplacian) is ALWAYS computed on `corrected.png`
@@ -83,6 +85,23 @@ def _level_from_flags(flags: list[str]) -> str:
     if not flags:
         return "ok"
     return "poor" if any(f.startswith("poor_") for f in flags) else "warn"
+
+
+def poor_reasons(q: QualityMetrics) -> list[str]:
+    """Plain-language reason for each `poor_*` flag, in flag order."""
+    reasons = {
+        "poor_exposure": ("the photo is too dark"
+                          if (q.brightness or 0.0) < _POOR["brightness_lo"]
+                          else "the photo is too bright"),
+        "poor_contrast": "the sheet is washed out or in shadow (too little contrast)",
+        "poor_clipping": "large parts of the photo are completely black or completely white",
+        "poor_glare": "there is strong glare on the sheet",
+        "poor_area": "the sheet fills too little of the photo",
+        "poor_perspective": "the photo was taken at too steep an angle",
+        "poor_resolution": "the sheet is too far away for the grid to be readable",
+        "poor_sharpness": "the photo is too blurry",
+    }
+    return [reasons[f] for f in q.flags if f in reasons]
 
 
 def quality_original(rgb_oriented: np.ndarray, quad_px=None,
