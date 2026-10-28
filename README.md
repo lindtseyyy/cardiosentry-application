@@ -357,8 +357,14 @@ python3 scripts/export_dataset.py --out captures_export.csv
   and never sorted by score. A descriptor may temporarily suppress selected
   heads at the serving boundary without changing the checkpoint; the UI says
   "Model score", never a probability of disease.
-- **Warn, never block** on image quality: a rejected photo is a missing data
-  point.
+- **Image quality gate** (`services/quality.py`): "warn" flags are shown on the
+  corner and preview screens and never block. A "poor" image is rejected with
+  `422 POOR_IMAGE_QUALITY` naming the reasons: at upload (exposure, contrast,
+  clipping, glare, and sheet area/angle/resolution when the sheet was detected)
+  the photo is deleted and no capture is created; at rectify (sharpness) nothing
+  is written or recorded. `CARDIOSENTRY_QUALITY_BLOCK_ON_POOR=false` restores
+  the original warn-only §14 policy, under which a rejected photo was a missing
+  data point.
 - **Blind mode + reference labels** (§17.6): the app records what the ECG
   actually shows, and can hide scores until labels are entered, so the dataset
   is defensible.
@@ -539,8 +545,8 @@ Before photographing anyone else's ECG, the operator must:
   Commission within 72 hours;
 - obtain research-ethics approval where the institution requires it.
 
-The notice states facts about this code (stored fields, nothing sent to a cloud
-service or third party, non-ECG uploads not stored, guidance answers not saved,
+The notice states facts about this code (stored fields, stored on a cloud-hosted
+server with no other third-party sharing, non-ECG and poor-quality uploads not stored, guidance answers not saved,
 account hashes and capture ownership).
 Change any of those and update
 `frontend/src/components/PrivacyNotice.tsx` and bump `PRIVACY_NOTICE_VERSION`

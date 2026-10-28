@@ -3,10 +3,12 @@ import type { PrivacyConfig } from "../api/types";
 // The Data Privacy Notice under the Philippine Data Privacy Act of 2012
 // (Republic Act No. 10173), its IRR, and National Privacy Commission (NPC)
 // issuances. Every factual claim here describes what the app actually does —
-// change the backend (server-side storage, no third-party transfer, soft
-// delete, guidance answers not saved, non-ECG uploads not stored, automatic
-// heat maps, stored fields, per-account visibility) and this text must change
-// with it, along with PRIVACY_NOTICE_VERSION in backend/api/config.py.
+// change the backend (server-side storage on a cloud-hosted server, no other
+// third-party transfer, soft
+// delete, guidance answers not saved, non-ECG and poor-quality uploads not
+// stored, automatic heat maps, stored fields, per-account visibility) and this
+// text must change with it, along with PRIVACY_NOTICE_VERSION in
+// backend/api/config.py.
 
 const NOT_SET = "Not yet configured — ask the person operating this device.";
 const heading = "text-[1.08rem] font-bold mt-6 mb-2 pb-1 border-b border-line text-ink first-of-type:mt-2.5 md:text-[1.15rem] md:mt-7 md:mb-2.5 md:first-of-type:mt-2.5";
@@ -20,7 +22,8 @@ export function PrivacySummary() {
       A photograph of an ECG is <strong>health information</strong> — sensitive
       personal information under the Philippine Data Privacy Act of 2012 (RA
       10173). CardioSentry stores the photograph, the processed images and the
-      model's results on the CardioSentry server, for research on how the model
+      model's results on the CardioSentry server, which is hosted by a cloud
+      service provider, for research on how the model
       performs on real photographs. It is not a diagnosis. Cover the patient's
       name and ID before photographing if you can.
     </p>
@@ -54,8 +57,12 @@ export default function PrivacyNotice({ privacy }: { privacy: PrivacyConfig | nu
           tracing is health information, which RA 10173 (Sec. 3(l)) classifies as
           sensitive personal information. A printed sheet may also show the
           patient's name, ID number, age and sex. The app first checks that the
-          photo shows an ECG; a photo it does not recognise as one is rejected
-          straight away and <strong>not stored</strong>.
+          photo shows an ECG and is clear enough to analyse; a photo it does not
+          recognise as an ECG, or one that is too dark, too bright, washed out,
+          glared, too small in the frame or taken at too steep an angle, is
+          rejected straight away and <strong>not stored</strong>. A photo found
+          too blurry after you confirm the sheet corners stays stored but is not
+          analysed.
         </li>
         <li>
           <strong>Images derived from it:</strong> a cropped and straightened copy of
@@ -104,7 +111,9 @@ export default function PrivacyNotice({ privacy }: { privacy: PrivacyConfig | nu
       <ul className={list}>
         <li>
           Photographs, processed images and records are stored on the CardioSentry
-          server. They are not sent to any cloud service or third party.
+          server, which runs on a cloud service provider's infrastructure located
+          outside the Philippines. The provider hosts the server only; the data is
+          not shared with any other third party.
         </li>
         <li>
           In the app, each scan is visible only to the account that created it.
@@ -116,9 +125,8 @@ export default function PrivacyNotice({ privacy }: { privacy: PrivacyConfig | nu
           photograph showing a patient's identity.
         </li>
         <li>
-          Data is copied off the server (for example, to a backup or outside the
-          Philippines) only with your consent and with safeguards equivalent to
-          RA 10173.
+          Data is copied off the server (for example, to a backup) only with your
+          consent and with safeguards equivalent to RA 10173.
         </li>
       </ul>
 

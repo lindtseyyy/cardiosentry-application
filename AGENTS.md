@@ -21,8 +21,8 @@ flowchart LR
   U[POST /api/captures] --> I[ingest: validate, EXIF orient, strip GPS, original.jpg]
   I --> E[ECG gate: not an ECG = 422 NOT_AN_ECG, folder removed, no record]
   E --> D[detect: OpenCV paper quad + fallback ladder]
-  D --> Q[quality: warnings only]
-  R[POST /rectify] --> W[rectify: homography -> corrected.png]
+  D --> Q[quality: warn flags shown; poor = 422 POOR_IMAGE_QUALITY, folder removed, no record]
+  R[POST /rectify] --> W[rectify: homography; poor sharpness = 422, nothing written -> corrected.png]
   W --> P[preprocess: training chain -> model_input.png]
   X[POST /predict] --> M[runner: strict load, thresholds, forward]
   M --> S[(PostgreSQL prediction_runs)]
@@ -138,6 +138,7 @@ There is **no lint or format tooling**: no ruff, black, mypy, ESLint or Prettier
 | Guidance rules | `services/guidance.py` (`RULE_SETS`, `FINDING_RULES`, `COMBINATIONS`; 911/CPR/AED, pediatric/pacemaker floors, known-history baselines, benign pair) + `schemas/guidance.py` (`cautions`, `combination_notes`, `priority_question`, `scope_note`) + `frontend/src/api/types.ts` + `frontend/src/components/GuidancePanel.tsx` utilities (including `print:` variants: screen-only priority gate, printable result/cautions/clinician notes/scope) / `frontend/src/styles.css` global print rules + `docs/clinical-guidance.md` + `tests/test_guidance.py` |
 | Descriptor field | `schemas/model_descriptor.py` + affected `models/*.yaml` + `models/README.md` |
 | ECG gate | `services/ecg_gate.py` (`load_gate` dispatch on descriptor `kind`, learned gate) + `services/ecg_gate_ocr.py` (OCR lead-label gate) + `schemas/ecg_gate.py` + `models/gates/*.yaml` + `api/captures.py` `create_capture` + `models/README.md` §ECG gate + `tests/test_ecg_gate.py`; switch gates with `CARDIOSENTRY_ECG_GATE=<id>` only; disabling it falsifies the privacy notice's "non-ECG photos are not stored" |
+| Quality gate | `services/quality.py` (metrics, `_POOR` thresholds, `poor_reasons`) + `api/captures.py` (`_blocks`, `_poor_quality_error` in `create_capture` and `rectify_capture`) + `settings.py` `quality_block_on_poor` / `warn_*` + `.env.example` + `frontend/src/components/QualityWarnings.tsx` (warn-flag text) + `tests/test_api_smoke.py`; a "poor" upload is deleted, so the privacy notice's "poor-quality uploads are not stored" depends on it |
 | Setting | `settings.py` + `.env.example` |
 | Backend data handling | `frontend/src/components/PrivacyNotice.tsx` + bump `PRIVACY_NOTICE_VERSION` in `api/config.py` |
 | New model | follow `models/README.md` checklist; fixture `tests/fixtures/expected_scores_<id>.json` + `EXPECTED_SCORES` in `tests/make_fixtures.py` |
@@ -165,7 +166,7 @@ There is **no lint or format tooling**: no ruff, black, mypy, ESLint or Prettier
 - **Do not upgrade `timm`**. The vendored arch packages depend on its `create_model` tag semantics.
 - Frontend: Node ≥20 (required by Tailwind v4) + **npm** (`package-lock.json`). There is no other package manager.
 - Inference is CPU by default (`CARDIOSENTRY_DEVICE=cpu`, `NUM_THREADS=4`).
-- The app must make no outbound network calls. The database host guard permits only loopback/Unix sockets; the privacy notice promises data stays on the CardioSentry server (no cloud service or third party) and that uploads the ECG gate rejects are not stored. Notice version: `2026-10-27.2`.
+- The app must make no outbound network calls. The database host guard permits only loopback/Unix sockets; the privacy notice states data stays on the CardioSentry server, which is cloud-hosted outside the Philippines (provider not named; no other third party), and that uploads the ECG gate or the quality gate rejects are not stored. Notice version: `2026-10-28.2`.
 - Scratch scripts that import `backend.*` need `sys.path.insert(0, "<app root>")`. Keep them outside the repo.
 - Back up records with `docker exec postgres-db-cardiosentry pg_dump -U cardiosentry cardiosentry` and images separately; protect backups as PHI. Losing the Docker volume loses accounts and records, not images; the legacy archive restores only pre-migration data. It is PHI, is not included in `pg_dump` or image backups, and erasure must also cover it. See README §Security & privacy for permanent erasure SQL (delete `explain_runs`, then `prediction_runs`, then `captures`), the trashed folder, per-capture archive removal, whole-archive deletion and retained copies.
 
