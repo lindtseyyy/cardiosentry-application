@@ -101,7 +101,7 @@ export default function ResultScreen({ prediction }: ResultScreenProps) {
       {record && !blind ? (
         <section className="hidden print:block print:mb-3.5" aria-hidden="true">
           <div className="flex items-center gap-2.5 pb-2 border-b-2 border-[#111]">
-            <img className="size-6.5" src="/favicon.png" alt="" />
+            <img className="h-6.5 w-auto" src="/logo.svg" alt="" />
             <div>
               <strong className="block text-[15pt]">CardioSentry ECG screening report</strong>
               <span className="text-[9pt] text-[#444]">Screening support only — not a diagnosis</span>

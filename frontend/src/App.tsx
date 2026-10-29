@@ -410,7 +410,7 @@ export default function App() {
             onClick={goCapture}
             aria-label="CardioSentry — Classify ECG"
           >
-            <img className="size-6 object-contain flex-none" src="/favicon.png" alt="" />
+            <img className="h-6 w-auto flex-none" src="/logo.svg" alt="" />
             CardioSentry
           </button>
           {user ? (
